@@ -126,6 +126,10 @@ def check_owe_capab(dev):
     if "OWE" not in dev.get_capability("key_mgmt"):
         raise HwsimSkip("OWE not supported")
 
+def check_pqc_capab(dev):
+    if "EAP-PQC" not in dev.get_capability("key_mgmt"):
+        raise HwsimSkip("EAP-PQC not supported")
+
 def check_erp_capa(dev):
     capab = dev.get_capability("erp")
     if not capab or 'ERP' not in capab:
