@@ -752,6 +752,8 @@ struct auth_802_1x_data {
 	const struct ieee80211_pqc_profile *pqc_profile;
 	struct crypto_ml_kem *ml_kem;
 	struct wpabuf *ml_kem_ss;
+	struct crypto_hash *transcript;
+	u16 last_stored_auth_transaction;
 #endif /* CONFIG_PQC */
 };
 #endif /* CONFIG_IEEE8021X_AUTH */
