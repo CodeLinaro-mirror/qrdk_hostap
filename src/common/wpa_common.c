@@ -1861,6 +1861,190 @@ err:
 }
 
 
+size_t wpa_hash_len(enum rsn_hash_alg hash)
+{
+	switch (hash) {
+	case RSN_HASH_SHA256:
+		return SHA256_MAC_LEN;
+	case RSN_HASH_SHA384:
+		return SHA384_MAC_LEN;
+	case RSN_HASH_SHA512:
+		return SHA512_MAC_LEN;
+	default:
+		return 0;
+	}
+}
+
+
+#ifdef CONFIG_PQC
+/**
+ * pqc_pmk_to_ptk - Derive PTK from PMK for PQC cases
+ * @pmk: PMK buffer
+ * @pmk_len: Length of PMK in octets
+ * @spa: Supplicant address
+ * @aa: Authenticator address
+ * @hash: Selected hash algorithm
+ * @cipher: Negotiated pairwise cipher
+ * @dhss: Diffie-Hellman shared secret. NULL, if not used.
+ * @dhss_len: Length of dhss in octets. Zero, if dhss is NULL.
+ * @ml_kem_ss: ML-KEM shared secret (32 octets)
+ * @transcript: Transcript hash of the authentication exchange
+ * @transcript_len: Length of the transcript hash in octets
+ * @ptk: Buffer for PTK
+ * @kdk_len: Length in octets that should be derived for KDK. Can be zero.
+ * Returns: 0 on success, -1 on failure
+ */
+int pqc_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa, const u8 *aa,
+		   enum rsn_hash_alg hash, int cipher,
+		   const u8 *dhss, size_t dhss_len, const u8 *ml_kem_ss,
+		   const u8 *transcript, size_t transcript_len,
+		   struct wpa_ptk *ptk, size_t kdk_len)
+{
+	static const char *label = "Pairwise key expansion";
+	size_t label_len = os_strlen(label);
+	u8 data[os_strlen(label) + 2 * ETH_ALEN];
+	u8 prk[SHA512_MAC_LEN];
+	u8 tmp[WPA_KCK_MAX_LEN + WPA_KEK_MAX_LEN + WPA_TK_MAX_LEN +
+	       WPA_KDK_MAX_LEN];
+	size_t hash_len;
+	const u8 *addrs[3];
+	size_t addrs_len[3];
+	unsigned int idx = 0;
+	size_t ptk_len;
+	int ret = -1;
+
+	wpa_printf(MSG_DEBUG, "PQC PMK to PTK: hash=%d", hash);
+
+	hash_len = wpa_hash_len(hash);
+	if (!hash_len) {
+		wpa_printf(MSG_DEBUG,
+			   "RSN: Unsupported hash algorithm %d for PQC PTK derivation",
+			   hash);
+		return -1;
+	}
+
+	if (!pmk || !pmk_len) {
+		wpa_printf(MSG_DEBUG, "RSN: No PMK for PTK derivation");
+		return -1;
+	}
+
+	/* IEEE P802.11bt/D1.0, 12.7.1.3: PMK_bits is the hash output length */
+	if (pmk_len != hash_len) {
+		wpa_printf(MSG_DEBUG,
+			   "RSN: Unexpected PMK length %zu for PQC PTK derivation (expected %zu)",
+			   pmk_len, hash_len);
+		return -1;
+	}
+
+	if (kdk_len > WPA_KDK_MAX_LEN) {
+		wpa_printf(MSG_DEBUG,
+			   "RSN: KDK len=%zu exceeds max supported length",
+			   kdk_len);
+		return -1;
+	}
+
+	if (!transcript || !transcript_len) {
+		wpa_printf(MSG_DEBUG,
+			   "RSN: No transcript hash for PQC PTK derivation");
+		return -1;
+	}
+
+	/* IEEE P802.11bt/D1.0, Table 12-13: KCK_bits is 128/192/256 */
+	ptk->kck_len = pmk_len / 2;
+	/* IEEE P802.11bt/D1.0, Table 12-13: KEK_bits is 128/256/256 */
+	ptk->kek_len = hash == RSN_HASH_SHA256 ? 16 : 32;
+	ptk->tk_len = wpa_cipher_key_len(cipher);
+	ptk->kdk_len = kdk_len;
+	ptk_len = ptk->kck_len + ptk->kek_len + ptk->tk_len + ptk->kdk_len;
+	ptk->hash_alg = hash;
+
+	/*
+	 * PRK = HKDF-Extract(T, EPHss || IKM)
+	 * Where EPHss is:
+	 * - MLKEMss for PQC profile 0
+	 * - DHss || MLKEMss for PQC profile 1, 2 and 3
+	 * Where IKM is:
+	 * - PMK-R1 for FT
+	 * - PMK otherwise
+	 */
+	if (dhss && dhss_len) {
+		addrs[idx] = dhss;
+		addrs_len[idx] = dhss_len;
+		idx++;
+	}
+
+	if (!ml_kem_ss) {
+		wpa_printf(MSG_DEBUG, "RSN: No MLKEMss for PQC PTK derivation");
+		return -1;
+	}
+	addrs[idx] = ml_kem_ss;
+	addrs_len[idx] = CRYPTO_ML_KEM_SS_LEN;
+	idx++;
+
+	addrs[idx] = pmk;
+	addrs_len[idx] = pmk_len;
+	idx++;
+
+	if (hkdf_extract(hash_len, transcript, transcript_len,
+			 idx, addrs, addrs_len, prk) < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "RSN: HKDF-Extract failed for PQC PMK to PTK");
+		goto err;
+	}
+
+
+	/*
+	 * PTK = HKDF-Expand(PRK, Pairwise key expansion" || SPA || AA,
+	 *		     Length)
+	 */
+	os_memcpy(data, label, label_len);
+	os_memcpy(data + label_len, spa, ETH_ALEN);
+	os_memcpy(data + label_len + ETH_ALEN, aa, ETH_ALEN);
+
+	if (hkdf_expand_bin(hash_len, prk, hash_len, data, sizeof(data),
+			    tmp, ptk_len) < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "RSN: HKDF-Expand failed for PQC PMK to PTK");
+		goto err;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "RSN: PQC: PTK derivation - SPA=" MACSTR " AA=" MACSTR,
+		   MAC2STR(spa), MAC2STR(aa));
+	wpa_hexdump_key(MSG_DEBUG, "RSN: PQC: PMK", pmk, pmk_len);
+	wpa_hexdump_key(MSG_DEBUG, "RSN: PQC: T", transcript, transcript_len);
+	wpa_hexdump_key(MSG_DEBUG, "RSN: PQC: PTK", tmp, ptk_len);
+
+	os_memcpy(ptk->kck, tmp, ptk->kck_len);
+	wpa_hexdump_key(MSG_DEBUG, "RSN: PQC: KCK", ptk->kck, ptk->kck_len);
+
+	os_memcpy(ptk->kek, tmp + ptk->kck_len, ptk->kek_len);
+	wpa_hexdump_key(MSG_DEBUG, "RSN: PQC: KEK", ptk->kek, ptk->kek_len);
+
+	os_memcpy(ptk->tk, tmp + ptk->kck_len + ptk->kek_len, ptk->tk_len);
+	wpa_hexdump_key(MSG_DEBUG, "RSN: PQC: TK", ptk->tk, ptk->tk_len);
+
+	if (kdk_len) {
+		os_memcpy(ptk->kdk, tmp + ptk->kck_len + ptk->kek_len +
+			  ptk->tk_len, ptk->kdk_len);
+		wpa_hexdump_key(MSG_DEBUG,
+				"RSN: PQC: KDK", ptk->kdk, ptk->kdk_len);
+	}
+
+	ptk->kek2_len = 0;
+	ptk->kck2_len = 0;
+
+	ptk->ptk_len = ptk_len;
+	ret = 0;
+
+err:
+	forced_memzero(tmp, sizeof(tmp));
+	forced_memzero(prk, sizeof(prk));
+
+	return ret;
+}
+#endif /* CONFIG_PQC */
+
 /*
  * pasn_mic_len - Returns the MIC length for PASN authentication
  * @alg: Selected hash algorithm from pasn_pmk_to_ptk()
