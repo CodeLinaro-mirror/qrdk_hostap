@@ -494,6 +494,13 @@ static void hostapd_ext_capab_byte(struct hostapd_data *hapd, u8 *pos, int idx,
 		if (hapd->iconf->channel_usage)
 			*pos |= 0x01; /* Bit 104 - Channel Usage support */
 		break;
+	case 14: /* Bits 112-119 */
+#ifdef CONFIG_PQC
+		/* Bit 117 - Extended Length Element Support */
+		if (hostapd_pqc_enabled(hapd->conf))
+			*pos |= 0x20;
+#endif /* CONFIG_PQC */
+		break;
 	}
 }
 
