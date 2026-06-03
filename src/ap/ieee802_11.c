@@ -3671,10 +3671,25 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 			return;
 		}
 
-		if (wpa_key_mgmt_sha384(sta->eap_auth_data.akm))
+		if (0) {
+#ifdef CONFIG_PQC
+		} else if (wpa_key_mgmt_pqc(sta->eap_auth_data.akm) &&
+			   sta->eap_auth_data.pqc_profile) {
+			pmk_len = wpa_hash_len(
+				sta->eap_auth_data.pqc_profile->hash);
+#endif /* CONFIG_PQC */
+		} else if (wpa_key_mgmt_sha384(sta->eap_auth_data.akm))
 			pmk_len = PMK_LEN_SUITE_B_192;
 		else
 			pmk_len = PMK_LEN;
+
+		if (_len < pmk_len) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X: MSK too short (%zu) for PMK length %zu",
+				   _len, pmk_len);
+			os_free(data);
+			return;
+		}
 
 		sta->eap_auth_data.pmk_len = pmk_len;
 		os_memcpy(sta->eap_auth_data.pmk, msk, pmk_len);
