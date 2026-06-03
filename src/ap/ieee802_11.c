@@ -3492,6 +3492,66 @@ static int ieee80211_802_1x_derive_ptk(struct hostapd_data *hapd,
 	else
 		kdk_len = 0;
 
+#ifdef CONFIG_PQC
+	if (wpa_key_mgmt_pqc(sta->eap_auth_data.akm)) {
+		const u8 *dhss = NULL;
+		size_t dhss_len = 0;
+		u8 t[SHA512_MAC_LEN];
+		size_t t_len;
+
+		if (!sta->eap_auth_data.ml_kem_ss) {
+			if (sta->eap_auth_data.auth_success) {
+				wpa_printf(MSG_INFO,
+					   "PQC: Missing ML-KEM shared secret for PTK derivation");
+				return -1;
+			}
+
+			wpa_printf(MSG_DEBUG,
+				   "PQC: No ML-KEM shared secret available yet, skip PTK derivation for now");
+			return 0;
+		}
+
+		if (!sta->eap_auth_data.transcript) {
+			wpa_printf(MSG_INFO,
+				   "PQC: Missing transcript hash for PTK derivation");
+			return -1;
+		}
+
+		t_len = sizeof(t);
+		if (crypto_hash_finish(sta->eap_auth_data.transcript,
+				       t, &t_len) < 0) {
+			wpa_printf(MSG_DEBUG,
+				   "PQC: Failed to calculate transcript hash");
+			return -1;
+		}
+		sta->eap_auth_data.transcript = NULL;
+
+		/* DHss is not present for PQC constraint 0 (no group) */
+		if (sta->eap_auth_data.dhss) {
+			dhss = wpabuf_head_u8(sta->eap_auth_data.dhss);
+			dhss_len = wpabuf_len(sta->eap_auth_data.dhss);
+		}
+
+		if (pqc_pmk_to_ptk(pmk, sta->eap_auth_data.pmk_len,
+				   sta->addr, aa,
+				   sta->eap_auth_data.pqc_profile->hash,
+				   sta->eap_auth_data.cipher,
+				   dhss, dhss_len,
+				   wpabuf_head_u8(sta->eap_auth_data.ml_kem_ss),
+				   t, t_len,
+				   &sta->eap_auth_data.ptk,
+				   kdk_len)) {
+			wpa_printf(MSG_INFO, "PQC: Failed to derive the PTK");
+			return -1;
+		}
+
+		/* Delete PQC specific data after PTK derivation */
+		wpabuf_clear_free(sta->eap_auth_data.ml_kem_ss);
+		sta->eap_auth_data.ml_kem_ss = NULL;
+		goto ptk_done;
+	}
+#endif /* CONFIG_PQC */
+
 	if (wpa_auth_802_1x_pmk_to_ptk(
 		    pmk, sta->eap_auth_data.pmk_len,
 		    sta->addr, aa,
@@ -3505,6 +3565,9 @@ static int ieee80211_802_1x_derive_ptk(struct hostapd_data *hapd,
 		wpa_printf(MSG_INFO, "Failed to derive the PTK");
 		return -1;
 	}
+#ifdef CONFIG_PQC
+ptk_done:
+#endif /* CONFIG_PQC */
 
 	/* Delete DHss after successful PTK derivation */
 	wpabuf_clear_free(sta->eap_auth_data.dhss);
