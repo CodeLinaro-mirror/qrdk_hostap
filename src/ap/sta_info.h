@@ -89,6 +89,13 @@ struct eap_over_auth_data {
 	bool add_mic;
 	u8 epp_pmkid_cur[PMKID_LEN];
 	u8 epp_pmkid_next[PMKID_LEN];
+#ifdef CONFIG_PQC
+	const struct ieee80211_pqc_profile *pqc_profile;
+	struct wpabuf *ml_kem_ss;
+	struct wpabuf *ml_kem_ciphertext;
+	u8 security_profile;
+	bool auth_success;
+#endif /* CONFIG_PQC */
 };
 
 #define EHT_ML_MAX_STA_PROF_LEN 1024
@@ -475,6 +482,7 @@ static inline void ap_sta_set_mld(struct sta_info *sta, bool mld)
 }
 
 void ap_sta_free_sta_profile(struct mld_info *info);
+void ap_sta_free_ml_kem_data(struct eap_over_auth_data *auth_data);
 
 void hostapd_free_link_stas(struct hostapd_data *hapd);
 void set_wpa_sm_for_each_partner_link(struct hostapd_data *hapd,
