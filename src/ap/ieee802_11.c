@@ -2947,17 +2947,22 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 	 * include a Diffie-Hellman Parameter element nor an RSNE nor an RSNXE
 	 * nor a Nonce element in the first Authentication frame for IEEE 802.1X
 	 * authentication.
+	 * Similarly, based on IEEE P802.11bt/D1.0, PQC Parameter element is not
+	 * expected when encrypted association is not used.
 	 */
 	if (!enc_assoc &&
-	    (elems->rsn_ie || elems->nonce || elems->owe_dh)) {
+	    (elems->rsn_ie || elems->nonce || elems->owe_dh ||
+	     elems->pqc_parameter)) {
 		wpa_printf(MSG_INFO,
-			   "Invalid inclusion of RSNE/Nonce/DHE when (Re)Association frame encryption is not supported");
+			   "Invalid inclusion of RSNE/Nonce/DHE/PQC when (Re)Association frame encryption is not supported");
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
+
 	if (enc_assoc &&
 	    (!elems->rsn_ie || !elems->nonce ||
-	     elems->nonce_len != WPA_NONCE_LEN || !elems->owe_dh)) {
-		wpa_printf(MSG_ERROR, "Missing RSNE/DHIE/Nonce");
+	     elems->nonce_len != WPA_NONCE_LEN ||
+	     (!elems->owe_dh && !elems->pqc_parameter))) {
+		wpa_printf(MSG_INFO, "Missing RSNE/DHE/Nonce/PQC");
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
 
@@ -2974,6 +2979,12 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 	     wpa_parse_wpa_ie_rsn(elems->rsn_ie - 2, elems->rsn_ie_len + 2,
 				  &rsn) < 0)) {
 		wpa_printf(MSG_INFO, "No valid RSNE");
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
+
+	if (enc_assoc && elems->owe_dh && elems->pqc_parameter) {
+		wpa_printf(MSG_INFO,
+			   "Incorrect inclusion of both DH Parameter element and PQC Parameter element");
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
 
@@ -3015,6 +3026,26 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG,
 			   "Received keymgmt (0x%x) in AKM Suite Selector element",
 			   sta->eap_auth_data.akm);
+	}
+
+	/*
+	 * The rest of the IEEE 802.1X code assumes that a PQC AKM implies a
+	 * valid PQC profile, which is only set when processing the element.
+	 */
+	if (enc_assoc && wpa_key_mgmt_pqc(sta->eap_auth_data.akm) &&
+	    !elems->pqc_parameter) {
+		wpa_printf(MSG_INFO,
+			   "Missing PQC Parameter element for AKM 0x%x",
+			   sta->eap_auth_data.akm);
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
+
+	if (enc_assoc && !wpa_key_mgmt_pqc(sta->eap_auth_data.akm) &&
+	    elems->pqc_parameter) {
+		wpa_printf(MSG_INFO,
+			   "Unexpected PQC Parameter element for AKM 0x%x",
+			   sta->eap_auth_data.akm);
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
 
 	if (elems->rsnxe) {
