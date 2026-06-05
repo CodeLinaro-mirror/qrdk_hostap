@@ -361,6 +361,38 @@ static void pmksa_cache_add_to_driver(struct rsn_pmksa_cache *pmksa,
 }
 
 
+/**
+ * pmksa_cache_recalc_pmkid - Recalculate the PMKID of a cache entry
+ * @entry: Pointer to the PMKSA cache entry to update
+ * @kck: Key confirmation key from the derived PTK
+ * @kck_len: KCK length in bytes
+ * @aa: Authenticator address
+ * @spa: Supplicant address
+ * @hash: Hash algorithm to use in the PMKID derivation
+ * Returns: 0 on success, -1 on failure
+ *
+ * Per IEEE P802.11bt/D1.0, 12.7.1.3, the PMKID of the PQC AKMs is keyed with
+ * the PTK-KCK, which is not available when the entry is created.
+ */
+int pmksa_cache_recalc_pmkid(struct rsn_pmksa_cache_entry *entry,
+			     const u8 *kck, size_t kck_len, const u8 *aa,
+			     const u8 *spa, enum rsn_hash_alg hash)
+{
+	if (!kck || !kck_len || kck_len > WPA_KCK_MAX_LEN)
+		return -1;
+
+	os_memcpy(entry->kck, kck, kck_len);
+	entry->kck_len = kck_len;
+
+	rsn_pmkid(kck, kck_len, aa, spa, entry->pmkid, entry->akmp, hash);
+
+	wpa_hexdump(MSG_DEBUG, "RSN: recalculated PMKID", entry->pmkid,
+		    PMKID_LEN);
+
+	return 0;
+}
+
+
 struct rsn_pmksa_cache_entry *
 pmksa_cache_add_entry(struct rsn_pmksa_cache *pmksa,
 		      struct rsn_pmksa_cache_entry *entry)

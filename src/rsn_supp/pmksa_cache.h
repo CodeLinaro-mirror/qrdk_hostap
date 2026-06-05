@@ -96,6 +96,9 @@ pmksa_cache_clone_entry(struct rsn_pmksa_cache *pmksa,
 void pmksa_cache_derive_pmkid(const struct rsn_pmksa_cache_entry *entry,
 			      const u8 *aa, const u8 *spa, u8 *pmkid,
 			      enum rsn_hash_alg hash);
+int pmksa_cache_recalc_pmkid(struct rsn_pmksa_cache_entry *entry,
+			     const u8 *kck, size_t kck_len, const u8 *aa,
+			     const u8 *spa, enum rsn_hash_alg hash);
 struct rsn_pmksa_cache_entry * pmksa_cache_get_current(struct wpa_sm *sm);
 void pmksa_cache_clear_current(struct wpa_sm *sm);
 int pmksa_cache_set_current(struct wpa_sm *sm, const u8 *pmkid,
