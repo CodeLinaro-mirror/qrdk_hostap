@@ -215,11 +215,14 @@ static void pmksa_cache_set_expiration(struct rsn_pmksa_cache *pmksa)
  * @aa: Authenticator address
  * @spa: Supplicant address
  * @pmkid: Buffer for the derived PMKID (PMKID_LEN bytes)
+ * @hash: Hash algorithm to use in the PMKID derivation or
+ *	%RSN_HASH_NOT_SPECIFIED to derive it from the AKMP
  *
  * Derives the PMKID using the appropriate method for the entry's AKMP.
  */
 void pmksa_cache_derive_pmkid(const struct rsn_pmksa_cache_entry *entry,
-			      const u8 *aa, const u8 *spa, u8 *pmkid)
+			      const u8 *aa, const u8 *spa, u8 *pmkid,
+			      enum rsn_hash_alg hash)
 {
 	if (entry->akmp == WPA_KEY_MGMT_IEEE8021X_SUITE_B_192)
 		rsn_pmkid_suite_b_192(entry->kck, entry->kck_len,
@@ -229,7 +232,7 @@ void pmksa_cache_derive_pmkid(const struct rsn_pmksa_cache_entry *entry,
 				  aa, spa, pmkid);
 	else
 		rsn_pmkid(entry->pmk, entry->pmk_len, aa, spa, pmkid,
-			  entry->akmp);
+			  entry->akmp, hash);
 }
 
 
@@ -258,7 +261,7 @@ struct rsn_pmksa_cache_entry *
 pmksa_cache_add(struct rsn_pmksa_cache *pmksa, const u8 *pmk, size_t pmk_len,
 		const u8 *pmkid, const u8 *kck, size_t kck_len,
 		const u8 *aa, const u8 *spa, void *network_ctx, int akmp,
-		const u8 *cache_id, u16 auth_alg)
+		const u8 *cache_id, u16 auth_alg, enum rsn_hash_alg hash)
 {
 	struct rsn_pmksa_cache_entry *entry;
 	struct os_reltime now;
@@ -292,7 +295,7 @@ pmksa_cache_add(struct rsn_pmksa_cache *pmksa, const u8 *pmk, size_t pmk_len,
 	if (pmkid)
 		os_memcpy(entry->pmkid, pmkid, PMKID_LEN);
 	else
-		pmksa_cache_derive_pmkid(entry, aa, spa, entry->pmkid);
+		pmksa_cache_derive_pmkid(entry, aa, spa, entry->pmkid, hash);
 	os_get_reltime(&now);
 	if (pmksa->sm) {
 		pmk_lifetime = pmksa->sm->dot11RSNAConfigPMKLifetime;
@@ -595,7 +598,8 @@ pmksa_cache_clone_entry(struct rsn_pmksa_cache *pmksa,
 				    old_entry->network_ctx, old_entry->akmp,
 				    old_entry->fils_cache_id_set ?
 				    old_entry->fils_cache_id : NULL,
-				    old_entry->auth_alg);
+				    old_entry->auth_alg,
+				    RSN_HASH_NOT_SPECIFIED);
 	if (new_entry == NULL)
 		return NULL;
 
@@ -977,7 +981,7 @@ struct rsn_pmksa_cache_entry *
 pmksa_cache_add(struct rsn_pmksa_cache *pmksa, const u8 *pmk, size_t pmk_len,
 		const u8 *pmkid, const u8 *kck, size_t kck_len,
 		const u8 *aa, const u8 *spa, void *network_ctx, int akmp,
-		const u8 *cache_id, u16 auth_alg)
+		const u8 *cache_id, u16 auth_alg, enum rsn_hash_alg hash)
 {
 	return NULL;
 }

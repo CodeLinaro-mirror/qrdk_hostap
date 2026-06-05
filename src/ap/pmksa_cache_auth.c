@@ -283,13 +283,14 @@ pmksa_cache_auth_add(struct rsn_pmksa_cache *pmksa,
 		     const u8 *pmk, size_t pmk_len, const u8 *pmkid,
 		     const u8 *kck, size_t kck_len,
 		     const u8 *aa, const u8 *spa, int session_timeout,
-		     struct eapol_state_machine *eapol, int akmp)
+		     struct eapol_state_machine *eapol, int akmp,
+		     enum rsn_hash_alg hash)
 {
 	struct rsn_pmksa_cache_entry *entry;
 
 	entry = pmksa_cache_auth_create_entry(pmk, pmk_len, pmkid, kck, kck_len,
 					      aa, spa, session_timeout, eapol,
-					      akmp);
+					      akmp, hash);
 
 	if (pmksa_cache_auth_add_entry(pmksa, entry) < 0)
 		return NULL;
@@ -318,7 +319,8 @@ struct rsn_pmksa_cache_entry *
 pmksa_cache_auth_create_entry(const u8 *pmk, size_t pmk_len, const u8 *pmkid,
 			      const u8 *kck, size_t kck_len, const u8 *aa,
 			      const u8 *spa, int session_timeout,
-			      struct eapol_state_machine *eapol, int akmp)
+			      struct eapol_state_machine *eapol, int akmp,
+			      enum rsn_hash_alg hash)
 {
 	struct rsn_pmksa_cache_entry *entry;
 	struct os_reltime now;
@@ -345,7 +347,7 @@ pmksa_cache_auth_create_entry(const u8 *pmk, size_t pmk_len, const u8 *pmkid,
 	else if (wpa_key_mgmt_suite_b(akmp))
 		rsn_pmkid_suite_b(kck, kck_len, aa, spa, entry->pmkid);
 	else
-		rsn_pmkid(pmk, pmk_len, aa, spa, entry->pmkid, akmp);
+		rsn_pmkid(pmk, pmk_len, aa, spa, entry->pmkid, akmp, hash);
 	os_get_reltime(&now);
 	entry->expiration = now.sec;
 	if (session_timeout > 0)
@@ -550,7 +552,8 @@ struct rsn_pmksa_cache_entry * pmksa_cache_get_okc(
 				  new_pmkid);
 		else
 			rsn_pmkid(entry->pmk, entry->pmk_len, aa, spa,
-				  new_pmkid, entry->akmp);
+				  new_pmkid, entry->akmp,
+				  RSN_HASH_NOT_SPECIFIED);
 		if (os_memcmp(new_pmkid, pmkid, PMKID_LEN) == 0)
 			return entry;
 	}

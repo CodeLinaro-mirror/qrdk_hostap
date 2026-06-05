@@ -168,7 +168,7 @@ static int sme_get_pmk_for_1x_auth(struct wpa_supplicant *wpa_s,
 
 	pmksa_cache_add(pmksa_cache, pmk_buf, len, NULL, NULL, 0, peer_addr,
 			wpa_s->own_addr, ssid, key_mgmt, NULL,
-			WLAN_AUTH_802_1X);
+			WLAN_AUTH_802_1X, RSN_HASH_NOT_SPECIFIED);
 
 	return 0;
 }

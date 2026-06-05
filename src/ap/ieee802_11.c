@@ -3036,7 +3036,8 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 					     sta->eap_auth_data.ptk.kck,
 					     sta->eap_auth_data.ptk.kck_len,
 					     aa, sta->addr, 0, sta->eapol_sm,
-					     sta->eap_auth_data.akm);
+					     sta->eap_auth_data.akm,
+					     RSN_HASH_NOT_SPECIFIED);
 		if (!entry) {
 			wpa_printf(MSG_INFO, "Failed to add PMKSA entry");
 			return;

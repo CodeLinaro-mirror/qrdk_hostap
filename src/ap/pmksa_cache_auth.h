@@ -65,12 +65,14 @@ pmksa_cache_auth_add(struct rsn_pmksa_cache *pmksa,
 		     const u8 *pmk, size_t pmk_len, const u8 *pmkid,
 		     const u8 *kck, size_t kck_len,
 		     const u8 *aa, const u8 *spa, int session_timeout,
-		     struct eapol_state_machine *eapol, int akmp);
+		     struct eapol_state_machine *eapol, int akmp,
+		     enum rsn_hash_alg hash);
 struct rsn_pmksa_cache_entry *
 pmksa_cache_auth_create_entry(const u8 *pmk, size_t pmk_len, const u8 *pmkid,
 			      const u8 *kck, size_t kck_len, const u8 *aa,
 			      const u8 *spa, int session_timeout,
-			      struct eapol_state_machine *eapol, int akmp);
+			      struct eapol_state_machine *eapol, int akmp,
+			      enum rsn_hash_alg hash);
 int pmksa_cache_auth_add_entry(struct rsn_pmksa_cache *pmksa,
 			       struct rsn_pmksa_cache_entry *entry);
 struct rsn_pmksa_cache_entry *

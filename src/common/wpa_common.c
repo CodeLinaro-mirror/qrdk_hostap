@@ -2951,6 +2951,7 @@ int wpa_pmk_r1_to_ptk(const u8 *pmk_r1, size_t pmk_r1_len,
  * @spa: Supplicant address
  * @pmkid: Buffer for PMKID
  * @akmp: Negotiated key management protocol
+ * @alg: Hash algorithm
  *
  * IEEE Std 802.11-2016 - 12.7.1.3 Pairwise key hierarchy
  * AKM: 00-0F-AC:3, 00-0F-AC:5, 00-0F-AC:6, 00-0F-AC:14, 00-0F-AC:16
@@ -2965,24 +2966,29 @@ int wpa_pmk_r1_to_ptk(const u8 *pmk_r1, size_t pmk_r1_len,
  * PMKID = Truncate-128(HMAC-SHA-1(PMK, "PMK Name" || AA || SPA))
  */
 void rsn_pmkid(const u8 *pmk, size_t pmk_len, const u8 *aa, const u8 *spa,
-	       u8 *pmkid, int akmp)
+	       u8 *pmkid, int akmp, enum rsn_hash_alg alg)
 {
 	char *title = "PMK Name";
 	const u8 *addr[3];
 	const size_t len[3] = { 8, ETH_ALEN, ETH_ALEN };
-	unsigned char hash[SHA384_MAC_LEN];
+	unsigned char hash[SHA512_MAC_LEN];
 
 	addr[0] = (u8 *) title;
 	addr[1] = aa;
 	addr[2] = spa;
 
 	if (0) {
+#ifdef CONFIG_SHA512
+	} else if (alg == RSN_HASH_SHA512) {
+		wpa_printf(MSG_DEBUG, "RSN: Derive PMKID using HMAC-SHA-512");
+		hmac_sha512_vector(pmk, pmk_len, 3, addr, len, hash);
+#endif /* CONFIG_SHA512 */
 #if defined(CONFIG_FILS) || defined(CONFIG_SHA384)
-	} else if (wpa_key_mgmt_sha384(akmp)) {
+	} else if (alg == RSN_HASH_SHA384 || wpa_key_mgmt_sha384(akmp)) {
 		wpa_printf(MSG_DEBUG, "RSN: Derive PMKID using HMAC-SHA-384");
 		hmac_sha384_vector(pmk, pmk_len, 3, addr, len, hash);
 #endif /* CONFIG_FILS || CONFIG_SHA384 */
-	} else if (wpa_key_mgmt_sha256(akmp)) {
+	} else if (alg == RSN_HASH_SHA256 || wpa_key_mgmt_sha256(akmp)) {
 		wpa_printf(MSG_DEBUG, "RSN: Derive PMKID using HMAC-SHA-256");
 		hmac_sha256_vector(pmk, pmk_len, 3, addr, len, hash);
 	} else {
