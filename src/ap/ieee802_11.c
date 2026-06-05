@@ -3713,6 +3713,10 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 					     sta->eap_auth_data.ptk.kck_len,
 					     aa, sta->addr, 0, sta->eapol_sm,
 					     sta->eap_auth_data.akm,
+#ifdef CONFIG_PQC
+					     sta->eap_auth_data.pqc_profile ?
+					     sta->eap_auth_data.pqc_profile->hash :
+#endif /* CONFIG_PQC */
 					     RSN_HASH_NOT_SPECIFIED);
 		if (!entry) {
 			wpa_printf(MSG_INFO, "Failed to add PMKSA entry");
@@ -4049,6 +4053,23 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			goto fail;
 		}
+
+		if (pmksa_cache_auth_recalc_pmkid(
+			    wpa_auth_get_pmksa_cache(hapd->wpa_auth,
+						     ap_sta_is_mld(hapd, sta)),
+			    cached_pmk, sta->eap_auth_data.ptk.kck,
+			    sta->eap_auth_data.ptk.kck_len, aa, sta->addr,
+			    sta->eap_auth_data.pqc_profile->hash) < 0) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X: Failed to recalculate the PMKID");
+			wpabuf_free(reply);
+			reply = NULL;
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
+
+		os_memcpy(sta->eap_auth_data.epp_pmkid_cur, cached_pmk->pmkid,
+			  PMKID_LEN);
 
 		sta->flags |= WLAN_STA_AUTH;
 		sta->auth_alg = WLAN_AUTH_802_1X;
