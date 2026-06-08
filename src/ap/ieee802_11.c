@@ -820,6 +820,90 @@ static int add_to_auth_transcript(struct sta_info *sta,
 	return 0;
 }
 
+
+/*
+ * add_last_8021x_auth_transcript - Build the last
+ * Authentication frame for IEEE 802.1X authentication and add it to the
+ * transcript
+ *
+ * @hapd: Pointer to hostapd_data
+ * @sta: Pointer to the station information
+ * @dst: Destination address for the Authentication frame reply
+ * @auth_transaction: Authentication transaction sequence number
+ * @status: Status code for the Authentication frame reply
+ * @data: Data to include in the Authentication frame reply
+ * Returns: 0 on success, -1 on failure.
+ *
+ * This function builds the last Authentication frame for IEEE 802.1X
+ * authentication. The last Authentication frame is handled differently
+ * from other Authentication frames, since for PQC AKMs, it needs to be
+ * included in the transcript before the derivation of the PTK, and the MIC
+ * needs to be calculated over the whole frame after this.
+ */
+static int
+add_last_8021x_auth_transcript(struct hostapd_data *hapd,
+			       struct sta_info *sta, const u8 *dst,
+			       u16 auth_transaction, u16 status,
+			       const struct wpabuf *data)
+{
+	struct wpabuf *buf;
+	size_t rlen = 6, mic_len = 0;
+	struct wpabuf *ml_resp = NULL;
+	enum rsn_hash_alg hash_alg = RSN_HASH_NOT_SPECIFIED;
+	int ret;
+
+#ifdef CONFIG_PQC
+	if (wpa_key_mgmt_pqc(sta->eap_auth_data.akm) &&
+	    sta->eap_auth_data.pqc_profile)
+		hash_alg = sta->eap_auth_data.pqc_profile->hash;
+#endif /* CONFIG_PQC */
+
+	if (data)
+		rlen += wpabuf_len(data);
+
+#ifdef CONFIG_IEEE80211BE
+	if (ap_sta_is_mld(hapd, sta)) {
+		ml_resp = hostapd_ml_auth_resp(hapd);
+		if (!ml_resp)
+			return -1;
+		rlen += wpabuf_len(ml_resp);
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	mic_len = wpa_mic_len(sta->eap_auth_data.akm,
+			      sta->eap_auth_data.pmk_len,
+			      hash_alg, PASN_GROUP_NOT_SPECIFIED);
+	rlen += 2 + mic_len;
+
+	buf = wpabuf_alloc(rlen);
+	if (!buf) {
+		wpabuf_free(ml_resp);
+		return -1;
+	}
+
+	wpabuf_put_le16(buf, WLAN_AUTH_802_1X);
+	wpabuf_put_le16(buf, auth_transaction);
+	wpabuf_put_le16(buf, status);
+
+	if (data)
+		wpabuf_put_buf(buf, data);
+
+	/* Mirror the element layout used by send_auth_reply() */
+	if (ml_resp)
+		wpabuf_put_buf(buf, ml_resp);
+	wpabuf_free(ml_resp);
+
+	/* Add a MIC element with all zeroes MIC */
+	wpabuf_put_u8(buf, WLAN_EID_MIC);
+	wpabuf_put_u8(buf, mic_len);
+	wpabuf_put(buf, mic_len);
+
+	ret = add_to_auth_transcript(sta, wpabuf_head_u8(buf),
+				     wpabuf_len(buf), auth_transaction);
+	wpabuf_free(buf);
+	return ret;
+}
+
 #endif /* CONFIG_IEEE8021X_AUTH */
 
 
@@ -3756,6 +3840,22 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 			}
 
 			sta->eap_auth_data.pmk_len = cached_pmk->pmk_len;
+
+			/*
+			 * Build the last Authentication frame from the AP and
+			 * add it to the transcript, as it is needed for PTK
+			 * derivation for PQC AKMs.
+			 */
+			if (add_last_8021x_auth_transcript(
+				    hapd, sta, sta->addr, auth_transaction + 1,
+				    WLAN_STATUS_SUCCESS, reply) < 0) {
+				wpa_printf(MSG_INFO,
+					   "Failed to add the last Authentication frame to transcript");
+				wpabuf_free(reply);
+				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+				goto fail;
+			}
+
 			if (ieee80211_802_1x_derive_ptk(hapd, sta,
 							cached_pmk->pmk, aa,
 							force_kdk, alg,
@@ -3835,6 +3935,22 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 		if (!reply) {
 			wpa_printf(MSG_INFO,
 				   "Failed to prepare IEEE 802.1X Authentication frame");
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
+
+		/*
+		 * Build the last Authentication frame from the AP and add it to
+		 * the transcript, as it is needed for PTK derivation for PQC
+		 * AKMs.
+		 */
+		if (add_last_8021x_auth_transcript(hapd, sta, sta->addr,
+						   auth_transaction + 1,
+						   WLAN_STATUS_SUCCESS,
+						   reply) < 0) {
+			wpa_printf(MSG_INFO,
+				   "Failed to add the last Authentication frame to transcript");
+			wpabuf_free(reply);
 			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			goto fail;
 		}
