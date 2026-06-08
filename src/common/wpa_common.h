@@ -825,7 +825,8 @@ int pqc_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa, const u8 *aa,
 		   const u8 *transcript, size_t transcript_len,
 		   struct wpa_ptk *ptk, size_t kdk_len);
 
-int wpa_auth_8021x_mic(int akmp, const u8 *kck, size_t kck_len, const u8 *addr1,
+int wpa_auth_8021x_mic(int akmp, enum rsn_hash_alg hash_alg,
+		       const u8 *kck, size_t kck_len, const u8 *addr1,
 		       const u8 *addr2, const u8 *data, size_t data_len,
 		       const u8 *frame, size_t frame_len, u8 *mic);
 
