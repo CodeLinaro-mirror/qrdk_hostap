@@ -3889,6 +3889,13 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 		   wpa_key_mgmt_pqc(sta->eap_auth_data.akm)) {
 		struct ieee802_11_elems elems;
 		struct rsn_pmksa_cache_entry *cached_pmk = NULL;
+		const u8 *aa = hapd->own_addr;
+		int cipher = sta->eap_auth_data.cipher;
+
+#ifdef CONFIG_IEEE80211BE
+		if (ap_sta_is_mld(hapd, sta))
+			aa = hapd->mld->mld_addr;
+#endif /* CONFIG_IEEE80211BE */
 
 		if (add_to_auth_transcript(
 			    sta, (const u8 *) &mgmt->u.auth,
@@ -3955,7 +3962,15 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 			goto fail;
 		}
 
-		/* TODO: Add PTK derivation */
+		if (ieee80211_802_1x_derive_ptk(hapd, sta, cached_pmk->pmk,
+						aa, force_kdk,
+						wpa_cipher_to_alg(cipher),
+						wpa_cipher_key_len(cipher)) < 0) {
+			wpabuf_free(reply);
+			reply = NULL;
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
 
 		sta->flags |= WLAN_STA_AUTH;
 		sta->auth_alg = WLAN_AUTH_802_1X;
