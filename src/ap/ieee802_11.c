@@ -3548,7 +3548,7 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 
 
 static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
-			       const u8 *pos, size_t len, u16 auth_alg,
+			       const struct ieee80211_mgmt *mgmt, size_t mgmt_len,
 			       u16 auth_transaction)
 {
 	struct ieee802_1x_hdr *eapol_pdu;
@@ -3556,6 +3556,8 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 	const u8 *end;
 	struct wpabuf *reply;
 	bool force_kdk = false;
+	const u8 *pos = mgmt->u.auth.variable;
+	size_t len = mgmt_len - IEEE80211_HDRLEN - sizeof(mgmt->u.auth);
 
 #ifdef CONFIG_TESTING_OPTIONS
 	force_kdk = hapd->conf->force_kdk_derivation;
@@ -3628,6 +3630,16 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 		resp = wpa_auth_validate_802_1x_frame(hapd, sta, &elems);
 		if (resp)
 			goto fail;
+
+		if (add_to_auth_transcript(
+			    sta, (const u8 *) &mgmt->u.auth,
+			    mgmt_len - IEEE80211_HDRLEN,
+			    auth_transaction) < 0) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X: Failed to add RX Authentication frame to transcript");
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
 
 		/* Validate Security Profile element, if present */
 		if (hapd->conf->security_profiles && elems.security_profile) {
@@ -3756,6 +3768,16 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 		struct ieee802_11_elems elems;
 		struct rsn_pmksa_cache_entry *cached_pmk = NULL;
 
+		if (add_to_auth_transcript(
+			    sta, (const u8 *) &mgmt->u.auth,
+			    mgmt_len - IEEE80211_HDRLEN,
+			    auth_transaction) < 0) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X: Failed to add RX Authentication frame to transcript");
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
+
 		if (ieee802_11_parse_elems(pos, end - pos,
 					   &elems, 1) == ParseFailed) {
 			wpa_printf(MSG_INFO,
@@ -3809,6 +3831,16 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 		send_8021x_auth_reply(hapd, sta, auth_transaction + 1,
 				      WLAN_STATUS_SUCCESS, reply);
 		return;
+	} else {
+		if (add_to_auth_transcript(
+			    sta, (const u8 *) &mgmt->u.auth,
+			    mgmt_len - IEEE80211_HDRLEN,
+			    auth_transaction) < 0) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X: Failed to add RX Authentication frame to transcript");
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
 #endif /* CONFIG_PQC */
 	}
 
@@ -5738,10 +5770,7 @@ static void handle_auth(struct hostapd_data *hapd,
 #endif /* CONFIG_FILS */
 #ifdef CONFIG_IEEE8021X_AUTH
 	case WLAN_AUTH_802_1X:
-		handle_auth_802_1x(hapd, sta, mgmt->u.auth.variable,
-				   len - IEEE80211_HDRLEN -
-				   sizeof(mgmt->u.auth),
-				   auth_alg, auth_transaction);
+		handle_auth_802_1x(hapd, sta, mgmt, len, auth_transaction);
 		return;
 #endif /* CONFIG_IEEE8021X_AUTH */
 #ifdef CONFIG_ENC_ASSOC
