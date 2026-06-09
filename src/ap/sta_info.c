@@ -584,6 +584,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	os_free(sta->eap_auth_data.rsnxe);
 #ifdef CONFIG_PQC
 	ap_sta_free_ml_kem_data(&sta->eap_auth_data);
+	crypto_hash_finish(sta->eap_auth_data.transcript, NULL, 0);
 #endif /* CONFIG_PQC */
 #endif /* CONFIG_IEEE8021X_AUTH */
 

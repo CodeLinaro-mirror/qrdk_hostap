@@ -700,6 +700,129 @@ static u16 auth_shared_key(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_WEP */
 
 
+#ifdef CONFIG_IEEE8021X_AUTH
+
+static int init_auth_transcript(struct sta_info *sta)
+{
+	enum crypto_hash_alg alg;
+
+	if (sta->eap_auth_data.transcript)
+		return 0;
+
+	if (!sta->eap_auth_data.pqc_profile) {
+		wpa_printf(MSG_DEBUG,
+			   "No PQC profile - do not calculate transcript");
+		return 0;
+	}
+
+	switch (sta->eap_auth_data.pqc_profile->hash) {
+	case RSN_HASH_SHA256:
+		alg = CRYPTO_HASH_ALG_SHA256;
+		break;
+	case RSN_HASH_SHA384:
+		alg = CRYPTO_HASH_ALG_SHA384;
+		break;
+	case RSN_HASH_SHA512:
+		alg = CRYPTO_HASH_ALG_SHA512;
+		break;
+	default:
+		wpa_printf(MSG_DEBUG, "Unknown transcript hash algorithm");
+		return -1;
+	}
+
+	sta->eap_auth_data.transcript = crypto_hash_init(alg, NULL, 0);
+	if (!sta->eap_auth_data.transcript) {
+		wpa_printf(MSG_DEBUG, "Failed to initialize transcript hash");
+		return -1;
+	}
+
+	return 0;
+}
+
+
+static int add_to_auth_transcript(struct sta_info *sta,
+				  const u8 *frame, size_t frame_len,
+				  u16 auth_transaction)
+{
+#ifdef CONFIG_PQC
+	u8 len[4];
+	const u8 *mic_elem = NULL;
+
+	if (auth_transaction == 1) {
+		/* Transcript does not include any failed retries, so clear it
+		 * when adding the first Authentication frame. */
+		crypto_hash_finish(sta->eap_auth_data.transcript, NULL, 0);
+		sta->eap_auth_data.transcript = NULL;
+		sta->eap_auth_data.last_stored_auth_transaction = 0;
+	} else if (auth_transaction <=
+		   sta->eap_auth_data.last_stored_auth_transaction) {
+		wpa_printf(MSG_DEBUG,
+			   "Skip storing Authentication frame (transaction %u <= %u)",
+			   auth_transaction,
+			   sta->eap_auth_data.last_stored_auth_transaction);
+		return 0;
+	}
+
+	if (init_auth_transcript(sta) < 0)
+		return -1;
+
+	if (frame_len > 8) {
+		size_t skip_len = 8 + WPA_GET_LE16(frame + 6);
+
+		if (frame_len > skip_len)
+			mic_elem = get_ie(frame + skip_len,
+					  frame_len - skip_len,
+					  WLAN_EID_MIC);
+	}
+
+	wpa_printf(MSG_DEBUG, "Add to authentication transcript (trans#=%u)",
+		   auth_transaction);
+
+	WPA_PUT_LE32(len, frame_len);
+	wpa_hexdump(MSG_MSGDUMP, "Transcript - Length", len, sizeof(len));
+	crypto_hash_update(sta->eap_auth_data.transcript, len, sizeof(len));
+
+	if (mic_elem && mic_elem[1] <= 32) {
+		/* Zero out the MIC that is based on PTK, i.e., that can be
+		 * derived only after the PTK derivation has used the
+		 * transcript. */
+		u8 zero[32];
+		const u8 *pos;
+
+		wpa_hexdump(MSG_MSGDUMP,
+			    "Transcript - Authentication MMPDU before MIC",
+			    frame, mic_elem - frame + 2);
+		crypto_hash_update(sta->eap_auth_data.transcript,
+				   frame, mic_elem - frame + 2);
+
+		os_memset(zero, 0, mic_elem[1]);
+		wpa_hexdump(MSG_MSGDUMP, "Transcript - Zero MIC",
+			    zero, mic_elem[1]);
+		crypto_hash_update(sta->eap_auth_data.transcript,
+				   zero, mic_elem[1]);
+
+		pos = mic_elem + 2 + mic_elem[1];
+		wpa_hexdump(MSG_MSGDUMP,
+			    "Transcript - Authentication MMPDU after MIC",
+			    pos, frame + frame_len - pos);
+		crypto_hash_update(sta->eap_auth_data.transcript,
+				   pos, frame + frame_len - pos);
+	} else {
+		wpa_hexdump(MSG_MSGDUMP, "Transcript - Authentication MMPDU",
+			    frame, frame_len);
+		crypto_hash_update(sta->eap_auth_data.transcript,
+				   frame, frame_len);
+	}
+
+	sta->eap_auth_data.last_stored_auth_transaction = auth_transaction;
+#endif /* CONFIG_PQC */
+
+	return 0;
+}
+
+#endif /* CONFIG_IEEE8021X_AUTH */
+
+
 static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 			   const u8 *dst,
 			   u16 auth_alg, u16 auth_transaction, u16 resp,
@@ -857,6 +980,17 @@ static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 		}
 		os_memcpy(ptr + 2, mic, mic_len);
 	}
+
+	if (auth_alg == WLAN_AUTH_802_1X && sta &&
+	    add_to_auth_transcript(sta, (const u8 *) &reply->u.auth,
+				   rlen - sizeof(struct ieee80211_hdr),
+				   auth_transaction) < 0) {
+		wpa_printf(MSG_INFO,
+			   "IEEE 802.1X: Failed to add TX Authentication frame to transcript");
+		os_free(buf);
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
+
 #endif /* CONFIG_IEEE8021X_AUTH */
 
 	if (hostapd_drv_send_mlme(hapd, reply, rlen, 0, NULL, 0, 0) < 0)
