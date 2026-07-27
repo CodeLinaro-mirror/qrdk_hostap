@@ -629,7 +629,7 @@ struct nan_shared_key {
 	u8 key[0]; /* IEEE 802.11 RSNA Key Descriptor */
 } STRUCT_PACKED;
 
-/* Wi-Fi Aware spec v4.0, Table 141 (Capability Info field) */
+/* Wi-Fi Aware R5 draft v0.0.16, Table 173 (Capability Info field) */
 #define NAN_DEV_CAPA_EXT_INFO_0_REG_VALID         BIT(0)
 #define NAN_DEV_CAPA_EXT_INFO_0_AP_TYPE_POS       1
 #define NAN_DEV_CAPA_EXT_INFO_0_AP_TYPE_MASK      (BIT(1) | BIT(2) | BIT(3))
@@ -641,6 +641,22 @@ struct nan_shared_key {
 
 #define NAN_DEV_CAPA_EXT_INFO_1_PAIRING_SETUP     BIT(0)
 #define NAN_DEV_CAPA_EXT_INFO_1_NPK_NIK_CACHING   BIT(1)
+#define NAN_DEV_CAPA_EXT_INFO_1_PIK_CACHING       BIT(2)
+#define NAN_DEV_CAPA_EXT_INFO_1_CROSS_LAYER_PAIR  BIT(3)
+/* b12-b15: Wi-Fi Generational Info */
+#define NAN_DEV_CAPA_EXT_INFO_1_WIFI_GEN_POS      4
+#define NAN_DEV_CAPA_EXT_INFO_1_WIFI_GEN_MASK     (BIT(4) | BIT(5) | \
+						   BIT(6) | BIT(7))
+
+#define NAN_DEV_CAPA_EXT_INFO_2_IDP_TWT_SUPPORT   BIT(0)
+#define NAN_DEV_CAPA_EXT_INFO_2_CM_DEFAULT_KA     BIT(1)
+#define NAN_DEV_CAPA_EXT_INFO_2_CM_DEAUTH_SA_QUERY BIT(2)
+#define NAN_DEV_CAPA_EXT_INFO_2_PIK_SUPPORT       BIT(3)
+#define NAN_DEV_CAPA_EXT_INFO_2_CM_NDTK_REKEY     BIT(4)
+#define NAN_DEV_CAPA_EXT_INFO_2_CM_TERM_NOTIF     BIT(5)
+
+/* b22-b37: Maximum Service Specific Info length for SDEA in follow up unicast
+ * frame the device can receive */
 
 /* Wi-Fi Aware spec v4.0, Table 22 (NIRA Cryptographic Parameters and Methods)
  */
