@@ -16,6 +16,8 @@ import re
 logger = logging.getLogger()
 import hostapd
 
+WLAN_AUTH_802_1X = 8
+
 def get_ifnames():
     ifnames = []
     with open("/proc/net/dev", "r") as f:
