@@ -1452,6 +1452,16 @@ static void nan_parse_nira(struct nan_data *nan, struct nan_peer *peer,
 }
 
 
+static void nan_parse_irsa(struct nan_data *nan, struct nan_peer *peer,
+			   struct nan_attrs *attrs)
+{
+	if (!attrs->irsa)
+		return;
+
+	peer->pairing.pairing_cfg.pairing_verification = true;
+}
+
+
 /*
  * nan_parse_device_attrs - Parse device attributes and build availability info
  *
@@ -1507,6 +1517,7 @@ int nan_parse_device_attrs(struct nan_data *nan, struct nan_peer *peer,
 	nan_parse_npba(nan, peer, &attrs);
 	nan_parse_pbea(nan, peer, &attrs);
 	nan_parse_nira(nan, peer, &attrs);
+	nan_parse_irsa(nan, peer, &attrs);
 
 	nan_peer_dump(nan, peer);
 	ret = 0;
