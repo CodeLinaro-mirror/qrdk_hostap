@@ -15194,6 +15194,12 @@ enum qca_vendor_wlan_sta_guard_interval {
  * outside %QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MLO_LINKS. For ML connection,
  * this attribute will be reported inside
  * %QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MLO_LINKS for each MLO link.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_CAP: Optionally used in response.
+ * u16 attribute and applicable only in AP mode. Represents the value of the
+ * Capability Information field advertised by the associated STA in its
+ * (Re)Association Request frame.
+ *
  */
 enum qca_wlan_vendor_attr_get_sta_info {
 	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_INVALID = 0,
@@ -15262,6 +15268,7 @@ enum qca_wlan_vendor_attr_get_sta_info {
 	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_NSS = 63,
 	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TX_CHAINS = 64,
 	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_CHAINS = 65,
+	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_CAP = 66,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_AFTER_LAST,
