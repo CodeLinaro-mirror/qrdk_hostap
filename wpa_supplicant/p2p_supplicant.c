@@ -2056,7 +2056,10 @@ static void wpas_start_gc(struct wpa_supplicant *wpa_s,
 		return;
 	ssid->ssid_len = res->ssid_len;
 
-	os_memcpy(ssid->bssid, res->peer_interface_addr, ETH_ALEN);
+	if (!is_zero_ether_addr(res->peer_interface_addr)) {
+		ssid->bssid_set = 1;
+		os_memcpy(ssid->bssid, res->peer_interface_addr, ETH_ALEN);
+	}
 
 	if (res->akmp == WPA_KEY_MGMT_PASN && res->sae_password[0]) {
 		ssid->auth_alg = WPA_AUTH_ALG_SAE;
@@ -2087,10 +2090,22 @@ static void wpas_start_gc(struct wpa_supplicant *wpa_s,
 		}
 		ssid->pmk_valid = true;
 	} else if ((res->akmp & WPA_KEY_MGMT_SAE) && res->sae_password[0]) {
-		ssid->auth_alg = WPA_AUTH_ALG_SAE;
+		/*
+		 * PCC can use SAE with a PCC GO or fall back to PSK with an
+		 * R1 GO. Leave authentication selection to the selected AKM
+		 * when both are advertised.
+		 */
+		if (!(res->akmp & WPA_KEY_MGMT_PSK))
+			ssid->auth_alg = WPA_AUTH_ALG_SAE;
 		ssid->sae_password = os_strdup(res->sae_password);
 		if (!ssid->sae_password)
 			return;
+		if (res->akmp & WPA_KEY_MGMT_PSK) {
+			ssid->passphrase = os_strdup(res->sae_password);
+			if (!ssid->passphrase)
+				return;
+			wpa_config_update_psk(ssid);
+		}
 	}
 
 	if (res->psk_set) {
@@ -2109,7 +2124,12 @@ static void wpas_start_gc(struct wpa_supplicant *wpa_s,
 	if (res->cipher)
 		ssid->pairwise_cipher |= res->cipher;
 	ssid->sae_pwe = SAE_PWE_HASH_TO_ELEMENT;
-	ssid->ieee80211w = MGMT_FRAME_PROTECTION_REQUIRED;
+	/* A PCC GC with PSK fallback may join an R1 GO. */
+	if (wpa_s->p2p_mode == WPA_P2P_MODE_WFD_PCC &&
+	    (res->akmp & WPA_KEY_MGMT_PSK))
+		ssid->ieee80211w = MGMT_FRAME_PROTECTION_OPTIONAL;
+	else
+		ssid->ieee80211w = MGMT_FRAME_PROTECTION_REQUIRED;
 	ssid->disabled = 0;
 	wpa_s->show_group_started = 1;
 	wpa_s->p2p_in_invitation = 1;
@@ -8510,6 +8530,12 @@ int wpas_p2p_group_add_persistent(struct wpa_supplicant *wpa_s,
 		freq = neg_freq;
 
 		if (wpa_s->p2p2 && join) {
+			if (go_bssid)
+				os_memcpy(wpa_s->pending_join_iface_addr,
+					  go_bssid, ETH_ALEN);
+			else if (ssid->bssid_set)
+				os_memcpy(wpa_s->pending_join_iface_addr,
+					  ssid->bssid, ETH_ALEN);
 			if (ssid->passphrase)
 				os_strlcpy(wpa_s->pending_join_password,
 					   ssid->passphrase,
