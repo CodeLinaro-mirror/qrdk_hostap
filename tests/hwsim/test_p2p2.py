@@ -431,6 +431,49 @@ def test_p2p_pcc_auto_go_and_pcc_client_join(dev, apdev):
     dev[0].wait_go_ending_session()
     dev[0].dump_monitor()
 
+def test_p2p_r1_auto_go_and_pcc_client_join(dev, apdev):
+    """A PCC client joining an R1 Auto GO using the legacy PSK profile"""
+    check_p2p2_capab(dev[1])
+    set_p2p2_configs(dev[1])
+
+    res = dev[0].global_request("P2P_GROUP_ADD freq=2437")
+    if "FAIL" in res:
+        raise Exception("P2P_GROUP_ADD failed")
+    ev = dev[0].wait_global_event(["P2P-GROUP-STARTED"], timeout=10)
+    if ev is None:
+        raise Exception("Group formation timed out")
+    res = dev[0].group_form_result(ev)
+    dev[0].dump_monitor()
+
+    cli = dev[1]
+    id2 = cli.p2pdev_add_network()
+    cli.p2pdev_set_network_quoted(id2, "ssid", res['ssid'])
+    cli.p2pdev_set_network_quoted(id2, "psk", res['passphrase'])
+    cli.p2pdev_set_network(id2, "bssid", res['go_dev_addr'])
+    cli.p2pdev_set_network(id2, "mode", "0")
+    cli.p2pdev_set_network(id2, "disabled", "2")
+    cmd = "P2P_GROUP_ADD persistent=%d p2p2 p2pmode=2 freq=2437" % id2
+    if "FAIL" in cli.global_request(cmd):
+        raise Exception("P2P_GROUP_ADD join on client failed")
+
+    ev = cli.wait_global_event(["P2P-GROUP-STARTED"], timeout=10)
+    if ev is None:
+        raise Exception("Group formation timed out (client)")
+    dev[0].wait_sta(addr=cli.own_addr(), wait_4way_hs=True)
+
+    key_mgmt = cli.get_status_field("key_mgmt")
+    if key_mgmt != "WPA2-PSK":
+        raise Exception("Unexpected key_mgmt: " + key_mgmt)
+    pmf = cli.get_status_field("pmf")
+    if pmf not in (None, "0"):
+        raise Exception("Unexpected pmf: " + str(pmf))
+
+    hwsim_utils.test_connectivity_p2p(dev[0], cli)
+
+    dev[0].remove_group()
+    cli.wait_go_ending_session()
+    cli.dump_monitor()
+
 def test_p2p_auto_go_and_client_join_sae(dev, apdev):
     """A new client joining a group using P2P Pairing/SAE"""
     check_p2p2_capab(dev[0])
