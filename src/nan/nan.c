@@ -453,6 +453,8 @@ void nan_flush(struct nan_data *nan)
 	nan_flush_niks(nan);
 	wpabuf_free(nan->sched.elems);
 	os_memset(&nan->sched, 0, sizeof(nan->sched));
+	os_memset(&nan->self_pkr, 0, sizeof(nan->self_pkr));
+	os_memset(nan->self_isk, 0, sizeof(nan->self_isk));
 }
 
 

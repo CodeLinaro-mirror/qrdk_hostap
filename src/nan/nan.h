@@ -991,6 +991,10 @@ int nan_pairing_set_pairing_verification(struct nan_data *nan_data, bool value);
 int nan_pairing_set_cipher_suites(struct nan_data *nan_data, u32 value);
 int nan_pairing_set_nik(struct nan_data *nan, const u8 *nik, size_t nik_len);
 int nan_pairing_set_nik_lifetime(struct nan_data *nan, u32 lifetime);
+int nan_pairing_set_self_pkr(struct nan_data *nan, const u8 *blob,
+			     size_t len);
+int nan_pairing_set_self_isk(struct nan_data *nan, const u8 *isk,
+			     size_t len);
 bool nan_pairing_is_peer_paired(struct nan_data *nan_data, const u8 *peer_addr);
 int nan_pairing_abort(struct nan_data *nan_data, const u8 *peer_addr);
 void nan_pairing_unpair_peer(struct nan_data *nan_data, const u8 *peer_addr);

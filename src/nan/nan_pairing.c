@@ -2256,6 +2256,73 @@ int nan_pairing_set_nik_lifetime(struct nan_data *nan, u32 lifetime)
 }
 
 
+/* A provisioned record is a PKRA body holding exactly one record */
+static int nan_pairing_parse_pkr_blob(const u8 *blob, size_t len,
+				      struct nan_pkr *pkr)
+{
+	int res;
+
+	if (!blob || len < 1 || blob[0] != 1) {
+		wpa_printf(MSG_INFO,
+			   "NAN: PKR blob must contain exactly one record");
+		return -1;
+	}
+
+	res = nan_pkr_parse(blob + 1, len - 1, pkr);
+	if (res < 0 || (size_t) res != len - 1) {
+		wpa_printf(MSG_INFO, "NAN: Invalid PKR blob");
+		return -1;
+	}
+
+	return 0;
+}
+
+
+/**
+ * nan_pairing_set_self_pkr - Install the local Public Key Record
+ * @nan: NAN data
+ * @blob: Number of PKRs (1) followed by one signed record
+ * @len: Length of @blob
+ * Returns: 0 on success, -1 on failure
+ *
+ * The current record is kept unless the new one parses and verifies.
+ * Installing a record with a different IPK invalidates the configured ISK.
+ */
+int nan_pairing_set_self_pkr(struct nan_data *nan, const u8 *blob,
+			     size_t len)
+{
+	struct nan_pkr pkr;
+
+	if (!nan || nan_pairing_parse_pkr_blob(blob, len, &pkr) < 0)
+		return -1;
+
+	if (!nan->self_pkr.valid ||
+	    os_memcmp(nan->self_pkr.ipk, pkr.ipk, NAN_IPK_LEN) != 0)
+		os_memset(nan->self_isk, 0, sizeof(nan->self_isk));
+	nan->self_pkr = pkr;
+	wpa_printf(MSG_DEBUG, "NAN: Local PKR installed");
+	return 0;
+}
+
+
+/**
+ * nan_pairing_set_self_isk - Set the Individual Secret Key of the local PKR
+ * @nan: NAN data
+ * @isk: P-256 private key
+ * @len: Length of @isk; must be NAN_ISK_LEN
+ * Returns: 0 on success, -1 on failure
+ */
+int nan_pairing_set_self_isk(struct nan_data *nan, const u8 *isk,
+			     size_t len)
+{
+	if (!nan || !isk || len != NAN_ISK_LEN)
+		return -1;
+
+	os_memcpy(nan->self_isk, isk, NAN_ISK_LEN);
+	return 0;
+}
+
+
 bool nan_pairing_is_peer_paired(struct nan_data *nan_data, const u8 *peer_addr)
 {
 	struct nan_peer *peer;

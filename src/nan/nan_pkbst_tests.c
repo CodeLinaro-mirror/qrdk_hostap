@@ -647,6 +647,74 @@ out:
 }
 
 
+static int test_pkr_blob(struct wpabuf *buf, const struct nan_pkr *pkr,
+			 const u8 *isk)
+{
+	const struct nan_pkr *pkrs[1] = { pkr };
+	const u8 *isks[1] = { isk };
+
+	buf->used = 0;
+	return nan_pkra_encode(buf, pkrs, isks, 1);
+}
+
+
+static int test_self_pkr(void)
+{
+	static const u8 zero_isk[NAN_ISK_LEN];
+	struct nan_data nan;
+	struct nan_pkr pkr, other;
+	struct wpabuf *buf = NULL;
+	u8 isk[NAN_ISK_LEN], other_isk[NAN_ISK_LEN];
+	const struct nan_pkr *two[2] = { &pkr, &other };
+	const u8 *two_isk[2] = { isk, other_isk };
+	int ret = -1;
+
+	os_memset(&nan, 0, sizeof(nan));
+	buf = wpabuf_alloc(512);
+	if (!buf || test_make_pkr(&pkr, isk) < 0 ||
+	    test_make_pkr(&other, other_isk) < 0 ||
+	    test_pkr_blob(buf, &pkr, isk) < 0 ||
+	    nan_pairing_set_self_pkr(&nan, wpabuf_head(buf),
+				     wpabuf_len(buf)) < 0 ||
+	    nan_pairing_set_self_isk(&nan, isk, sizeof(isk)) < 0 ||
+	    os_memcmp(nan.self_pkr.ipk, pkr.ipk, NAN_IPK_LEN) != 0)
+		goto out;
+
+	/* An invalid record leaves the installed record and ISK in place */
+	wpabuf_mhead_u8(buf)[wpabuf_len(buf) - 1] ^= 0x01;
+	if (nan_pairing_set_self_pkr(&nan, wpabuf_head(buf),
+				     wpabuf_len(buf)) == 0 ||
+	    os_memcmp(nan.self_pkr.ipk, pkr.ipk, NAN_IPK_LEN) != 0 ||
+	    os_memcmp(nan.self_isk, isk, NAN_ISK_LEN) != 0)
+		goto out;
+
+	/* Exactly one record, no trailing data */
+	buf->used = 0;
+	if (nan_pkra_encode(buf, two, two_isk, 2) < 0 ||
+	    nan_pairing_set_self_pkr(&nan, wpabuf_head(buf),
+				     wpabuf_len(buf)) == 0)
+		goto out;
+
+	/* A record with another IPK drops the ISK of the previous one */
+	if (test_pkr_blob(buf, &other, other_isk) < 0 ||
+	    nan_pairing_set_self_pkr(&nan, wpabuf_head(buf),
+				     wpabuf_len(buf)) < 0 ||
+	    os_memcmp(nan.self_isk, zero_isk, NAN_ISK_LEN) != 0 ||
+	    nan_pairing_set_self_isk(&nan, isk, 16) == 0)
+		goto out;
+
+	ret = 0;
+out:
+	if (ret)
+		wpa_printf(MSG_ERROR, "FAIL: local PKR installation");
+	forced_memzero(isk, sizeof(isk));
+	forced_memzero(other_isk, sizeof(other_isk));
+	forced_memzero(nan.self_isk, sizeof(nan.self_isk));
+	wpabuf_free(buf);
+	return ret;
+}
+
+
 /**
  * nan_pkbst_tests - Run NAN PKBST unit tests
  * Returns: 0 on success, -1 on failure
@@ -655,7 +723,7 @@ int nan_pkbst_tests(void)
 {
 	if (test_pkr_usable() || test_pkr_signature() || test_pkr_encode() ||
 	    test_pkr_parse() || test_pkr_parse_optional() || test_pkra() ||
-	    test_pkbst_password() || test_fkce())
+	    test_pkbst_password() || test_fkce() || test_self_pkr())
 		return -1;
 	return 0;
 }

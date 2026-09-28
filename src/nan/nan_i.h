@@ -669,6 +669,8 @@ struct nan_peer {
  * @self_nik_list: List of self NIKs (NAN Identity Keys)
  * @peer_nik_list: List of peer NIKs (NAN Identity Keys)
  * @group_nik_list: List of group NIKs (NAN Identity Keys)
+ * @self_pkr: Local Public Key Record used for PKBST
+ * @self_isk: Individual Secret Key for @self_pkr
  */
 struct nan_data {
 	struct nan_config *cfg;
@@ -697,6 +699,9 @@ struct nan_data {
 	struct dl_list self_nik_list;
 	struct dl_list peer_nik_list;
 	struct dl_list group_nik_list;
+
+	struct nan_pkr self_pkr;
+	u8 self_isk[NAN_ISK_LEN];
 };
 
 struct nan_attrs_entry {
