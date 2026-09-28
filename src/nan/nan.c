@@ -4358,6 +4358,55 @@ static size_t nan_irsa_pkbst_tags(struct nan_data *nan, bool is_publisher,
 }
 
 
+int nan_irsa_get_peer_pkbst_tags(struct nan_data *nan, struct nan_peer *peer,
+				 u8 *irsa_nonce, u8 **irsa_tag_tlv,
+				 u16 *irsa_tag_tlv_len)
+{
+	const u8 *self_iik = nan->self_pkr.valid ? nan->self_pkr.iik : NULL;
+	bool subscriber;
+	size_t len = 0;
+	u8 *pos;
+
+	*irsa_tag_tlv = NULL;
+	*irsa_tag_tlv_len = 0;
+	if (!peer || peer->bootstrap.pkbst_mode == NAN_PKBST_MODE_NONE ||
+	    !nan_pairing_is_pkr_usable(&peer->peer_pkr) ||
+	    os_get_random(irsa_nonce, NAN_NIRA_NONCE_LEN) < 0)
+		return -1;
+
+	if (peer->pairing.self_pairing_role != NAN_PAIRING_ROLE_IDLE)
+		subscriber = peer->pairing.self_pairing_role ==
+			NAN_PAIRING_ROLE_INITIATOR;
+	else
+		subscriber = !peer->bootstrap.initiator;
+
+	if (self_iik &&
+	    (peer->bootstrap.pkbst_mode == NAN_PKBST_MODE_MUTUAL ||
+	     !subscriber))
+		len += nan_irsa_iik_tag(nan, self_iik, NAN_TAG_TYPE_SN,
+					irsa_nonce, NULL);
+	if (peer->bootstrap.pkbst_mode == NAN_PKBST_MODE_MUTUAL || subscriber)
+		len += nan_irsa_iik_tag(nan, peer->peer_pkr.iik,
+					NAN_TAG_TYPE_DN, irsa_nonce, NULL);
+
+	*irsa_tag_tlv = os_malloc(len);
+	if (!*irsa_tag_tlv)
+		return -1;
+
+	pos = *irsa_tag_tlv;
+	if (self_iik &&
+	    (peer->bootstrap.pkbst_mode == NAN_PKBST_MODE_MUTUAL ||
+	     !subscriber))
+		nan_irsa_iik_tag(nan, self_iik, NAN_TAG_TYPE_SN, irsa_nonce,
+				 &pos);
+	if (peer->bootstrap.pkbst_mode == NAN_PKBST_MODE_MUTUAL || subscriber)
+		nan_irsa_iik_tag(nan, peer->peer_pkr.iik, NAN_TAG_TYPE_DN,
+				 irsa_nonce, &pos);
+	*irsa_tag_tlv_len = len;
+	return 0;
+}
+
+
 /**
  * nan_irsa_get_nonce_tag_tlv - Generate the IRSA nonce and Tag TLVs
  * @nan: NAN data

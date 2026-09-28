@@ -1049,6 +1049,40 @@ static void nan_pairing_add_csia(const struct nan_data *nan_data,
 
 
 /*
+ * With PKBST, identify the selected records to the peer during PASN setup
+ * with the same NAN Tags as in discovery.
+ */
+static void nan_pairing_add_pkbst_irsa(struct nan_data *nan,
+				       struct nan_peer *peer,
+				       struct wpabuf *buf, size_t start)
+{
+	u8 nonce[NAN_NIRA_NONCE_LEN];
+	u8 *tags = NULL;
+	u16 tags_len = 0;
+	bool is_publisher =
+		peer->pairing.self_pairing_role == NAN_PAIRING_ROLE_RESPONDER;
+
+	if (peer->bootstrap.pkbst_mode == NAN_PKBST_MODE_NONE ||
+	    nan_irsa_get_nonce_tag_tlv(nan, nonce, &tags, &tags_len,
+					is_publisher) < 0 ||
+	    !tags_len || wpabuf_tailroom(buf) < 3 + 1 + sizeof(nonce) +
+	    tags_len ||
+	    /* The NAN element carrying the attributes is limited to 255 */
+	    wpabuf_len(buf) - start + 3 + 1 + sizeof(nonce) + tags_len > 255) {
+		os_free(tags);
+		return;
+	}
+
+	wpabuf_put_u8(buf, NAN_ATTR_IRSA);
+	wpabuf_put_le16(buf, 1 + sizeof(nonce) + tags_len);
+	wpabuf_put_u8(buf, NAN_IRSA_CIPHER_VER_SIPHASH_2_4);
+	wpabuf_put_data(buf, nonce, sizeof(nonce));
+	wpabuf_put_data(buf, tags, tags_len);
+	os_free(tags);
+}
+
+
+/*
  * nan_pairing_prepare_pasn_elems - Prepare NAN element for pairing PASN frames
  * @nan_data: Pointer to NAN data structure
  * @peer: Pointer to NAN peer structure
@@ -1065,6 +1099,7 @@ static void nan_pairing_add_csia(const struct nan_data *nan_data,
  *   (initiator, Wi-Fi Aware spec v4.0, section 7.6.4)
  * - NAN Pairing Bootstrapping attribute (NPBA), if available
  * - Pairing Bootstrapping Extended attribute (PBEA), if available
+ * - Identity Resolution Set attribute (IRSA), if available
  */
 static void nan_pairing_prepare_pasn_elems(struct nan_data *nan_data,
 					   struct nan_peer *peer,
@@ -1111,6 +1146,9 @@ static void nan_pairing_prepare_pasn_elems(struct nan_data *nan_data,
 				wpabuf_free(pbea);
 			}
 		}
+
+		nan_pairing_add_pkbst_irsa(nan_data, peer, extra_ies,
+					   initial_len + 2);
 	} else {
 		const u8 *npkid = peer->pairing.pasn->custom_pmkid;
 
