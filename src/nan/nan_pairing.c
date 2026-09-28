@@ -15,6 +15,27 @@
 #include "pasn/pasn_common.h"
 #include "nan/nan_i.h"
 
+
+/* IRSA with the PNTag of the NPKID (Wi-Fi Aware spec R5, section 7.6.5.1) */
+static void nan_pairing_add_pntag_irsa(struct wpabuf *buf, const u8 *npkid,
+				       size_t start)
+{
+	const size_t len = 1 + NAN_NIRA_NONCE_LEN + 2 + NAN_NIRA_TAG_LEN;
+
+	if (wpabuf_tailroom(buf) < NAN_ATTR_HDR_LEN + len ||
+	    wpabuf_len(buf) - start + NAN_ATTR_HDR_LEN + len > 255)
+		return;
+
+	wpabuf_put_u8(buf, NAN_ATTR_IRSA);
+	wpabuf_put_le16(buf, len);
+	wpabuf_put_u8(buf, NAN_IRSA_CIPHER_VER_SIPHASH_2_4);
+	wpabuf_put_data(buf, npkid, NAN_NIRA_NONCE_LEN);
+	wpabuf_put_u8(buf, NAN_TAG_TYPE_PN);
+	wpabuf_put_u8(buf, 1);
+	wpabuf_put_data(buf, &npkid[NAN_NIRA_NONCE_LEN], NAN_NIRA_TAG_LEN);
+}
+
+
 static void nan_pairing_prepare_pasn_elems(struct nan_data *nan_data,
 					   struct nan_peer *peer,
 					   struct wpabuf *extra_ies,
@@ -679,6 +700,31 @@ static int nan_pairing_send_cb(void *ctx, const u8 *data, size_t data_len,
 }
 
 
+/*
+ * Wi-Fi Aware spec R5, section 7.6.5.1: with NPK/PIK caching, the PMKID of the
+ * pairing verification is Nonce || PNTag, where the PNTag is derived from the
+ * PIK cached with the peer and the local NMI address, as in the IRSA of the
+ * same frame (Table 25).
+ */
+static int nan_pairing_pik_npkid(struct nan_data *nan,
+				 const struct nan_pik_cache_entry *pik,
+				 u8 *npkid)
+{
+	struct wpabuf *tag;
+
+	if (os_get_random(npkid, NAN_NIRA_NONCE_LEN) < 0)
+		return -1;
+	tag = nan_crypto_derive_irsa_tag(pik->pik, NAN_PIK_LEN,
+					 nan->cfg->nmi_addr, npkid);
+	if (!tag)
+		return -1;
+	os_memcpy(&npkid[NAN_NIRA_NONCE_LEN], wpabuf_head(tag),
+		  NAN_NIRA_TAG_LEN);
+	wpabuf_free(tag);
+	return 0;
+}
+
+
 /**
  * nan_pasn_verification_init - Initialize PASN data for pairing verification
  * @nan_data: Pointer to NAN data structure containing configuration
@@ -693,25 +739,38 @@ static int nan_pasn_verification_init(struct nan_data *nan_data,
 				      struct nan_peer *peer)
 {
 	struct nan_pairing_peer_data *pairing_data;
-	const struct wpabuf *npk;
+	const struct nan_pik_cache_entry *pik;
+	const struct wpabuf *npk = NULL;
+	const u8 *npk_data;
+	size_t npk_len;
 	int akmp;
 	u8 npkid[NAN_NIRA_NONCE_LEN + NAN_NIRA_TAG_LEN];
 
 	pairing_data = &peer->pairing;
+	pik = nan_pik_cache_get(nan_data->pik_cache, peer->nmi_addr);
 
-	if (!pairing_data->nonce_tag_valid) {
+	if (!pairing_data->nonce_tag_valid && !pik) {
 		wpa_printf(MSG_DEBUG,
-			   "NAN: Pairing: NIK ID not available for verification");
+			   "NAN: Pairing: No identity available for verification");
 		return -1;
 	}
 
-	npk = nan_data->cfg->get_npk_akmp(nan_data->cfg->cb_ctx, peer->nmi_addr,
-					  pairing_data->nonce,
-					  pairing_data->tag, &akmp);
-	if (!npk) {
-		wpa_printf(MSG_DEBUG,
-			   "NAN: Pairing: Failed to get NPK AKMP for verification");
-		return -1;
+	if (pik) {
+		npk_data = pik->npk;
+		npk_len = pik->npk_len;
+		akmp = pik->akmp;
+	} else {
+		npk = nan_data->cfg->get_npk_akmp(nan_data->cfg->cb_ctx,
+						  peer->nmi_addr,
+						  pairing_data->nonce,
+						  pairing_data->tag, &akmp);
+		if (!npk) {
+			wpa_printf(MSG_DEBUG,
+				   "NAN: Pairing: Failed to get NPK AKMP for verification");
+			return -1;
+		}
+		npk_data = wpabuf_head_u8(npk);
+		npk_len = wpabuf_len(npk);
 	}
 
 	pasn_set_akmp(pairing_data->pasn, akmp);
@@ -720,23 +779,26 @@ static int nan_pasn_verification_init(struct nan_data *nan_data,
 		pasn_initiator_pmksa_cache_add(nan_data->initiator_pmksa,
 					       nan_data->cfg->nmi_addr,
 					       peer->nmi_addr,
-					       wpabuf_head_u8(npk),
-					       wpabuf_len(npk), NULL, akmp);
+					       npk_data, npk_len, NULL, akmp);
 	else
 		pasn_responder_pmksa_cache_add(nan_data->responder_pmksa,
 					       nan_data->cfg->nmi_addr,
 					       peer->nmi_addr,
-					       wpabuf_head_u8(npk),
-					       wpabuf_len(npk), NULL, akmp);
+					       npk_data, npk_len, NULL, akmp);
 
 	/*
 	 * According to Wi-Fi Aware Specification v4.0, section 7.6.5, pairing
 	 * verification uses NPKID constructed from NIRA nonce and tag. The same
 	 * nonce and tag should be used in the NIRA added to PASN first and
-	 * second frames.
+	 * second frames. With NPK/PIK caching the NAN Tag is a PNTag derived
+	 * from the cached PIK and the IRSA carries it instead (Wi-Fi Aware spec
+	 * R5, section 7.6.5.1).
 	 */
-	if (nan_nira_get_tag_nonce(nan_data->cfg, npkid,
-				   &npkid[NAN_NIRA_NONCE_LEN]) < 0) {
+	if (pik) {
+		if (nan_pairing_pik_npkid(nan_data, pik, npkid) < 0)
+			return -1;
+	} else if (nan_nira_get_tag_nonce(nan_data->cfg, npkid,
+					  &npkid[NAN_NIRA_NONCE_LEN]) < 0) {
 		wpa_printf(MSG_DEBUG, "NAN: Failed to get NIRA tag and nonce");
 		return -1;
 	}
@@ -754,12 +816,31 @@ static int nan_pasn_verification_init(struct nan_data *nan_data,
 
 static int nan_validate_custom_pmkid(void *ctx, const u8 *addr, const u8 *pmkid)
 {
+	struct nan_data *nan = ctx;
+	const struct nan_pik_cache_entry *pik;
+	struct wpabuf *tag;
+	int ret;
+
 	/*
-	 * In NAN pairing, custom PMKID is constructed from NIRA nonce and tag.
-	 * Matching the tag to a known NIK is done during NIRA validation so
-	 * here we just accept any PMKID.
+	 * With NPK/PIK caching the NAN Tag in the PMKID is a PNTag derived
+	 * from the PIK cached with the peer and the peer's NMI address, so it
+	 * is verified here. Otherwise, the custom PMKID is constructed from a
+	 * NIRA nonce and tag, which are matched to a known NIK during NIRA
+	 * validation, and any PMKID is accepted.
 	 */
-	return 0;
+	pik = nan_pik_cache_get(nan->pik_cache, addr);
+	if (!pik)
+		return 0;
+
+	tag = nan_crypto_derive_irsa_tag(pik->pik, NAN_PIK_LEN, addr, pmkid);
+	if (!tag)
+		return -1;
+	ret = os_memcmp_const(wpabuf_head(tag), &pmkid[NAN_NIRA_NONCE_LEN],
+			      NAN_NIRA_TAG_LEN) == 0 ? 0 : -1;
+	wpabuf_free(tag);
+	wpa_printf(MSG_DEBUG, "NAN: Pairing: PNTag in PMKID %s",
+		   ret ? "did not match the cached PIK" : "verified");
+	return ret;
 }
 
 
@@ -1195,13 +1276,16 @@ static void nan_pairing_prepare_pasn_elems(struct nan_data *nan_data,
 		const u8 *npkid = peer->pairing.pasn->custom_pmkid;
 
 		/*
-		 * Add NIRA with the same nonce and tag as in the NPKID.
-		 * NPKID is: NONCE || TAG.
+		 * Add the identity attribute with the same nonce and tag as in
+		 * the NPKID. NPKID is: Nonce || NAN Tag. With NPK/PIK caching
+		 * the tag is a PNTag and is carried in an IRSA.
 		 */
-		if (nan_add_nira(extra_ies, &npkid[NAN_NIRA_NONCE_LEN],
-				 npkid)) {
+		if (nan_pik_cache_get(nan_data->pik_cache, peer->nmi_addr))
+			nan_pairing_add_pntag_irsa(extra_ies, npkid,
+						   initial_len + 2);
+		else if (nan_add_nira(extra_ies, &npkid[NAN_NIRA_NONCE_LEN],
+				      npkid))
 			wpa_printf(MSG_DEBUG, "NAN: Failed to add NIRA");
-		}
 	}
 
 	*len_ptr = wpabuf_len(extra_ies) - initial_len - 2;
