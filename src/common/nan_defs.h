@@ -714,6 +714,11 @@ struct nan_assoc_nik_entry {
 };
 
 /* Wi-Fi Aware R5 spec, Table 35 (Record Control format) */
+#define NAN_PKR_CONF_VALID_AFTER	BIT(0)
+#define NAN_PKR_CONF_VALID_BEFORE	BIT(1)
+#define NAN_PKR_CONF_GIKS		BIT(2)
+#define NAN_PKR_CONF_DS_INFO		BIT(3)
+
 #define NAN_PKR_OP_CTRL_MUTUAL_REQUIRED	BIT(0)
 #define NAN_PKR_OP_CTRL_ONE_TIME_USE	BIT(1)
 #define NAN_PKR_OP_CTRL_REVOKED		BIT(2)

@@ -29,6 +29,8 @@ struct nan_config;
 /* RFC 5480 SubjectPublicKeyInfo DER prefix for a compressed P-256 key */
 #define NAN_IPK_SPKI_PREFIX_LEN	26
 #define NAN_ISK_LEN	32	/* P-256 private key */
+#define NAN_GIK_LEN	16	/* Group Identity Key */
+#define NAN_MAX_GIKS	8	/* Local limit on GIKs retained per PKR */
 
 #define NAN_ELEMENT_MAX_SIZE 1024
 
@@ -36,6 +38,8 @@ struct nan_config;
  * struct nan_pkr - NAN Public Key Record (PKR)
  * @ipk: Individual Public Key (compressed P-256)
  * @iik: Individual Identity Key
+ * @giks: Group Identity Keys
+ * @num_giks: Number of entries in @giks
  * @op_ctrl: Operation Control bits (NAN_PKR_OP_CTRL_*)
  * @valid_duration: Valid Duration in minutes (Wi-Fi Aware spec R5, Table 34)
  * @created_at: Time the record was installed; start of Valid Duration
@@ -44,6 +48,8 @@ struct nan_config;
 struct nan_pkr {
 	u8 ipk[NAN_IPK_LEN];
 	u8 iik[NAN_IIK_LEN];
+	u8 giks[NAN_MAX_GIKS][NAN_GIK_LEN];
+	u8 num_giks;
 	u16 op_ctrl;
 	u32 valid_duration;
 	struct os_reltime created_at;

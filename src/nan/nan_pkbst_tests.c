@@ -302,6 +302,122 @@ out:
 }
 
 
+/* Append Length | data | Record Signature for a hand-built record */
+static int test_sign_record(struct wpabuf *buf, const u8 *isk,
+			    const struct wpabuf *data)
+{
+	struct wpabuf *sig;
+
+	sig = nan_crypto_sign_pkr(isk, wpabuf_head(data), wpabuf_len(data));
+	if (!sig)
+		return -1;
+	wpabuf_put_be16(buf, wpabuf_len(data) + wpabuf_len(sig));
+	wpabuf_put_buf(buf, data);
+	wpabuf_put_buf(buf, sig);
+	wpabuf_free(sig);
+	return 0;
+}
+
+
+static int test_pkr_parse_optional(void)
+{
+	static const u8 ds_info[] = { 0x50, 0x6f, 0x9a, 0x00, 0x01, 0xaa };
+	struct nan_pkr pkr, parsed;
+	struct wpabuf *data = NULL, *buf = NULL;
+	u8 isk[NAN_ISK_LEN], *pos;
+	unsigned int i;
+	int ret = -1;
+
+	if (test_make_pkr(&pkr, isk) < 0)
+		goto out;
+
+	/* Encoder round trip with the maximum number of GIKs */
+	pkr.num_giks = NAN_MAX_GIKS;
+	for (i = 0; i < NAN_MAX_GIKS; i++)
+		os_memset(pkr.giks[i], 0x30 + i, NAN_GIK_LEN);
+	buf = wpabuf_alloc(512);
+	data = wpabuf_alloc(256);
+	if (!buf || !data || nan_pkr_encode(buf, &pkr, isk) < 0 ||
+	    nan_pkr_parse(wpabuf_head(buf), wpabuf_len(buf), &parsed) < 0 ||
+	    parsed.num_giks != NAN_MAX_GIKS ||
+	    os_memcmp(parsed.giks, pkr.giks, sizeof(pkr.giks)) != 0)
+		goto out;
+
+	/* All optional fields, one GIK; big-endian lengths per Wi-Fi Aware
+	 * spec R5, Table 34 */
+	wpabuf_put_u8(data, NAN_PKR_VERSION);
+	wpabuf_put_u8(data, NAN_PKR_CONF_VALID_AFTER |
+		      NAN_PKR_CONF_VALID_BEFORE | NAN_PKR_CONF_GIKS |
+		      NAN_PKR_CONF_DS_INFO);
+	wpabuf_put_be16(data, 0);
+	wpabuf_put_u8(data, NAN_PKR_CIPHER_VERSION_0);
+	wpabuf_put_data(data, pkr.ipk, NAN_IPK_LEN);
+	wpabuf_put_data(data, pkr.iik, NAN_IIK_LEN);
+	wpabuf_put_be32(data, 5);
+	os_memset(wpabuf_put(data, 16), 0x5a, 16); /* Valid After/Before */
+	wpabuf_put_be16(data, 1);
+	wpabuf_put_data(data, pkr.giks[3], NAN_GIK_LEN);
+	wpabuf_put_be16(data, sizeof(ds_info));
+	wpabuf_put_data(data, ds_info, sizeof(ds_info));
+	buf->used = 0;
+	if (test_sign_record(buf, isk, data) < 0 ||
+	    nan_pkr_parse(wpabuf_head(buf), wpabuf_len(buf), &parsed) < 0 ||
+	    parsed.valid_duration != 5 || parsed.num_giks != 1 ||
+	    os_memcmp(parsed.giks[0], pkr.giks[3], NAN_GIK_LEN) != 0)
+		goto out;
+
+	/* Oversized DS info length must not run past the record */
+	pos = wpabuf_mhead_u8(data) + wpabuf_len(data) - sizeof(ds_info) - 2;
+	WPA_PUT_BE16(pos, 0x0100);
+	buf->used = 0;
+	if (test_sign_record(buf, isk, data) < 0 ||
+	    nan_pkr_parse(wpabuf_head(buf), wpabuf_len(buf), &parsed) >= 0)
+		goto out;
+
+	/* More GIKs than retained: accept, keep the first NAN_MAX_GIKS */
+	data->used = 0;
+	wpabuf_put_u8(data, NAN_PKR_VERSION);
+	wpabuf_put_u8(data, NAN_PKR_CONF_GIKS | NAN_PKR_CONF_DS_INFO);
+	wpabuf_put_be16(data, 0);
+	wpabuf_put_u8(data, NAN_PKR_CIPHER_VERSION_0);
+	wpabuf_put_data(data, pkr.ipk, NAN_IPK_LEN);
+	wpabuf_put_data(data, pkr.iik, NAN_IIK_LEN);
+	wpabuf_put_be32(data, 5);
+	wpabuf_put_be16(data, NAN_MAX_GIKS + 1);
+	for (i = 0; i <= NAN_MAX_GIKS; i++)
+		os_memset(wpabuf_put(data, NAN_GIK_LEN), i, NAN_GIK_LEN);
+	wpabuf_put_be16(data, sizeof(ds_info));
+	wpabuf_put_data(data, ds_info, sizeof(ds_info));
+	buf->used = 0;
+	if (test_sign_record(buf, isk, data) < 0 ||
+	    nan_pkr_parse(wpabuf_head(buf), wpabuf_len(buf), &parsed) < 0 ||
+	    parsed.num_giks != NAN_MAX_GIKS)
+		goto out;
+	for (i = 0; i < NAN_MAX_GIKS; i++) {
+		if (parsed.giks[i][0] != i ||
+		    parsed.giks[i][NAN_GIK_LEN - 1] != i)
+			goto out;
+	}
+
+	/* GIK count running past the record must be rejected */
+	pos = wpabuf_mhead_u8(data) + 1 + 3 + 1 + NAN_IPK_LEN + NAN_IIK_LEN + 4;
+	WPA_PUT_BE16(pos, 0x0100);
+	buf->used = 0;
+	if (test_sign_record(buf, isk, data) < 0 ||
+	    nan_pkr_parse(wpabuf_head(buf), wpabuf_len(buf), &parsed) >= 0)
+		goto out;
+
+	ret = 0;
+out:
+	if (ret)
+		wpa_printf(MSG_ERROR, "FAIL: PKR optional field parsing");
+	forced_memzero(isk, sizeof(isk));
+	wpabuf_free(data);
+	wpabuf_free(buf);
+	return ret;
+}
+
+
 /**
  * nan_pkbst_tests - Run NAN PKBST unit tests
  * Returns: 0 on success, -1 on failure
@@ -309,7 +425,7 @@ out:
 int nan_pkbst_tests(void)
 {
 	if (test_pkr_usable() || test_pkr_signature() || test_pkr_encode() ||
-	    test_pkr_parse())
+	    test_pkr_parse() || test_pkr_parse_optional())
 		return -1;
 	return 0;
 }

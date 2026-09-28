@@ -57,10 +57,10 @@ bool nan_pairing_is_pkr_usable(const struct nan_pkr *pkr)
  * Returns: 0 on success, -1 on failure
  *
  * Wi-Fi Aware spec R5, Table 34: Length | Version | Record Control | Cipher
- * Version | IPK | IIK | Valid Duration | Record Signature, big-endian. The
- * signature covers the fields after Length and is mandatory, so a record is
- * never emitted without it. The ISK is passed separately so that record
- * structures never hold secret keys.
+ * Version | IPK | IIK | Valid Duration | [Number of GIKs | List of GIKs] |
+ * Record Signature, big-endian. The signature covers the fields after Length
+ * and is mandatory, so a record is never emitted without it. The ISK is
+ * passed separately so that record structures never hold secret keys.
  */
 int nan_pkr_encode(struct wpabuf *buf, const struct nan_pkr *pkr, const u8 *isk)
 {
@@ -68,19 +68,25 @@ int nan_pkr_encode(struct wpabuf *buf, const struct nan_pkr *pkr, const u8 *isk)
 	size_t len;
 	int ret = -1;
 
-	if (!buf || !pkr || !pkr->valid || !isk)
+	if (!buf || !pkr || !pkr->valid || !isk ||
+	    pkr->num_giks > NAN_MAX_GIKS)
 		return -1;
 
-	data = wpabuf_alloc(1 + 3 + 1 + NAN_IPK_LEN + NAN_IIK_LEN + 4);
+	data = wpabuf_alloc(1 + 3 + 1 + NAN_IPK_LEN + NAN_IIK_LEN + 4 + 2 +
+			    pkr->num_giks * NAN_GIK_LEN);
 	if (!data)
 		return -1;
 	wpabuf_put_u8(data, NAN_PKR_VERSION);
-	wpabuf_put_u8(data, 0); /* Record Configuration */
+	wpabuf_put_u8(data, pkr->num_giks ? NAN_PKR_CONF_GIKS : 0);
 	wpabuf_put_be16(data, pkr->op_ctrl);
 	wpabuf_put_u8(data, NAN_PKR_CIPHER_VERSION_0);
 	wpabuf_put_data(data, pkr->ipk, NAN_IPK_LEN);
 	wpabuf_put_data(data, pkr->iik, NAN_IIK_LEN);
 	wpabuf_put_be32(data, pkr->valid_duration);
+	if (pkr->num_giks) {
+		wpabuf_put_be16(data, pkr->num_giks);
+		wpabuf_put_data(data, pkr->giks, pkr->num_giks * NAN_GIK_LEN);
+	}
 
 	sig = nan_crypto_sign_pkr(isk, wpabuf_head(data), wpabuf_len(data));
 	if (!sig)
@@ -110,15 +116,17 @@ out:
  * @pkr: Buffer for the parsed record; modified only on success
  * Returns: Number of octets consumed on success, -1 on failure
  *
- * Wi-Fi Aware spec R5, Table 34 and Table 35. The Record Signature is mandatory
- * and is verified with the IPK carried in the record.
+ * Wi-Fi Aware spec R5, Table 34 and Table 35. The optional fields are present
+ * as indicated by the Record Configuration bits. The Record Signature is
+ * mandatory and is verified with the IPK carried in the record.
  */
 int nan_pkr_parse(const u8 *data, size_t len, struct nan_pkr *pkr)
 {
 	struct nan_pkr tmp;
 	const u8 *pos, *end, *signed_start;
 	u8 conf;
-	size_t rec_len;
+	u16 num_giks, ds_len;
+	size_t rec_len, skip;
 
 	if (!data || !pkr || len < 2)
 		return -1;
@@ -155,11 +163,48 @@ int nan_pkr_parse(const u8 *data, size_t len, struct nan_pkr *pkr)
 	tmp.valid_duration = WPA_GET_BE32(pos);
 	pos += 4;
 
-	if (conf) {
-		wpa_printf(MSG_DEBUG,
-			   "NAN: Unsupported PKR Record Configuration 0x%02x",
-			   conf);
-		return -1;
+	/* Valid After/Before are skipped; validity is taken from Valid
+	 * Duration, which starts when the record is received.
+	 */
+	skip = 0;
+	if (conf & NAN_PKR_CONF_VALID_AFTER)
+		skip += 8;
+	if (conf & NAN_PKR_CONF_VALID_BEFORE)
+		skip += 8;
+	if ((size_t) (end - pos) < skip)
+		goto truncated;
+	pos += skip;
+
+	if (conf & NAN_PKR_CONF_GIKS) {
+		if (end - pos < 2)
+			goto truncated;
+		num_giks = WPA_GET_BE16(pos);
+		pos += 2;
+		if (end - pos < num_giks * NAN_GIK_LEN)
+			goto truncated;
+		/*
+		 * The number of GIKs is not limited by the spec. Retain up to
+		 * NAN_MAX_GIKS and skip the rest; the signature still covers
+		 * the whole list.
+		 */
+		tmp.num_giks = num_giks > NAN_MAX_GIKS ? NAN_MAX_GIKS :
+			num_giks;
+		if (num_giks > NAN_MAX_GIKS)
+			wpa_printf(MSG_DEBUG,
+				   "NAN: PKR has %u GIKs; retaining first %u",
+				   num_giks, NAN_MAX_GIKS);
+		os_memcpy(tmp.giks, pos, tmp.num_giks * NAN_GIK_LEN);
+		pos += num_giks * NAN_GIK_LEN;
+	}
+
+	if (conf & NAN_PKR_CONF_DS_INFO) {
+		if (end - pos < 2)
+			goto truncated;
+		ds_len = WPA_GET_BE16(pos);
+		pos += 2;
+		if (end - pos < ds_len)
+			goto truncated;
+		pos += ds_len;
 	}
 
 	/* The remainder is the mandatory Record Signature */
