@@ -1,0 +1,132 @@
+wpa_supplicant and Wi-Fi Aware Public Key Bootstrapping (PKBST)
+==================================================================
+
+This document describes how the NAN Public Key Bootstrapping (PKBST)
+and pairwise identity caching of Wi-Fi Aware R5 are configured and used
+through the wpa_supplicant control interface.
+
+With PKBST, NAN devices pair without user interaction by using Public
+Key Records (PKRs) provisioned in advance, e.g., from a companion app.
+A PKR carries an Individual Public Key (IPK, compressed P-256), an
+Individual Identity Key (IIK), optionally Group Identity Keys (GIKs),
+a Valid Duration, and a mandatory Record Signature made with the
+Individual Secret Key (ISK) that belongs to the IPK.
+
+In one-way PKBST only the publisher's record is used; in mutual PKBST
+both devices' records are used. The SAE password for pairing is
+derived from the IPK(s), and each device that owns a used record proves
+possession of its ISK with a FILS Key Confirmation element in PASN.
+
+
+Record format
+-------------
+
+Records are exchanged as hex strings holding the body of a Public Key
+Record attribute with a single record:
+
+  Number of PKRs (1) | Length | Version | Record Control |
+  Cipher Version | IPK | IIK | Valid Duration | [optional fields] |
+  Record Signature
+
+All record fields are big-endian. Records that are unsigned, carry an
+invalid signature, or use an unsupported version are rejected.
+
+
+Record provisioning
+-------------------
+
+NAN_SET self_pkr <hex>
+	Install the local record. The previous record stays in place if
+	the new one is invalid. Installing a record with a different IPK
+	clears the configured ISK.
+
+NAN_SET self_isk <hex>
+	Set the 32-octet ISK of the local record. The ISK is never exported.
+
+NAN_SET generate_self_pkr 1
+	Generate a new local key pair, IIK, and record. The Operation
+	Control is set to one-time use and the Valid Duration is set to five
+	minutes. The GIKs of the current record are kept; the first generated
+	record has one random GIK.
+
+NAN_GET self_pkr
+	Export the local record, signed with the ISK, for provisioning on
+	peers. Fails if no ISK matching the record is configured.
+
+NAN_SET peer_pkr [<peer NMI> ]<hex>
+	Install a peer record. Without a peer address, the record is staged
+	and applied to the next discovered peer.
+
+The IIK and GIKs of the local record, and the IIK of peer records, are
+used for NAN Tag generation and resolution in the IRSA.
+
+
+Discovery, bootstrapping and pairing
+------------------------------------
+
+NAN_SET extended_pkbst_method <0-3>
+	Supported PKBST methods: bit 0 one-way, bit 1 mutual.
+
+Services advertise PKBST with the extended_pbm=<value> parameter of
+NAN_PUBLISH and NAN_SUBSCRIBE. The method used with a peer is one that
+both devices support, preferring mutual PKBST.
+
+PKBST bootstrap follow-up frames carry the selected one-way or mutual
+method in the PBEA Extended Pairing Bootstrapping Method field and use
+an NPBA Pairing Bootstrapping Method value of zero. PKBST is accepted
+only when the advertised methods are mutually supported and the
+required Public Key Records are provisioned.
+
+NAN_BOOTSTRAP ... method=<1|2>
+	With PKBST configured, method 1 requests one-way and method 2
+	requests mutual PKBST bootstrapping.
+
+NAN_PAIR ... auth=1
+	When one-way or mutual PKBST was negotiated with the peer, the SAE
+	password is derived from the records and any configured password is
+	ignored.
+	Pairing fails if a needed record is missing, expired, or revoked, or
+	if the peer's identity confirmation is missing or invalid.
+
+One-time-use records are currently not deleted automatically after
+pairing setup.
+
+
+Pairwise identity caching
+-------------------------
+
+NAN_SET pik_caching 1
+	Enable NPK/PIK caching. When both devices support it, they derive a
+	Pairwise Identity Key (PIK) after pairing setup instead of
+	exchanging NIKs.
+
+The PIK is cached with the NPK for each paired peer, is kept across NAN
+restarts, and is freed when the interface is removed. The device then
+includes Pairing NAN Tags (PNTags) derived from the cached PIKs in its
+SDFs, resolves received PNTags with them, and uses them for pairing
+verification (NAN_PAIR ... auth=2).
+
+
+Record updates
+--------------
+
+NAN_UPDATE_PKR [peer_nmi=<addr>] [generate=1] [op_ctrl=<value>]
+		       [send=1] [send_revoked=1]
+	Update the local record and optionally send it to a paired peer in a
+	Protected Transport frame. generate=1 creates a new local record.
+	op_ctrl sets the Operation Control field of the local record. send=1
+	sends the local record; with send_revoked=1, the record replaced by
+	the last generate=1 is also sent as revoked, asking the peer to delete
+	it. Without peer_nmi, the first paired peer is used.
+
+Received updates are accepted only from paired peers and only in
+protected frames. Each accepted change is reported with:
+
+  NAN-PKR-UPDATE addr=<peer NMI> iik=<IIK> revoked=<0|1>
+
+
+Limitations
+-----------
+
+- Valid After, Valid Before, and Device and Service Info of received
+  records are parsed but not used; validity is based on Valid Duration.
