@@ -853,6 +853,64 @@ out:
 }
 
 
+static int test_pik(void)
+{
+	/* Independently computed with the IEEE 802.11 KDF (HMAC-SHA256) */
+	static const u8 expected[NAN_PIK_LEN] = {
+		0xad, 0x8e, 0x20, 0x8e, 0x66, 0x85, 0x30, 0x7c,
+		0x30, 0x9f, 0x48, 0xa2, 0x15, 0x0a, 0x9f, 0xfe
+	};
+	const u8 init[ETH_ALEN] = { 0x02, 0x11, 0x22, 0x33, 0x44, 0x55 };
+	const u8 resp[ETH_ALEN] = { 0x02, 0xaa, 0xbb, 0xcc, 0xdd, 0xee };
+	u8 kdk[32], pik[NAN_PIK_LEN], other[NAN_PIK_LEN];
+	struct nan_pik_cache *cache;
+	const struct nan_pik_cache_entry *entry;
+	unsigned int i;
+	int ret = -1;
+
+	for (i = 0; i < sizeof(kdk); i++)
+		kdk[i] = i + 1;
+	if (nan_crypto_derive_pik(kdk, sizeof(kdk), init, resp, pik) < 0 ||
+	    os_memcmp(pik, expected, sizeof(pik)) != 0 ||
+	    nan_crypto_derive_pik(kdk, sizeof(kdk), resp, init, other) < 0 ||
+	    os_memcmp(pik, other, sizeof(pik)) == 0) {
+		wpa_printf(MSG_ERROR, "FAIL: PIK derivation");
+		return -1;
+	}
+
+	cache = nan_pik_cache_init(2);
+	if (!cache)
+		return -1;
+	/* Update keeps a single entry; a full cache drops the oldest */
+	if (nan_pik_cache_add(cache, init, other, kdk, 32, 0) < 0)
+		goto out;
+	if (nan_pik_cache_add(cache, init, pik, kdk, 32, 0) < 0 ||
+	    cache->count != 1)
+		goto out;
+	entry = nan_pik_cache_get(cache, init);
+	if (!entry || os_memcmp(entry->pik, pik, NAN_PIK_LEN) != 0)
+		goto out;
+	if (nan_pik_cache_add(cache, resp, other, kdk, 32, 0) < 0)
+		goto out;
+	if (nan_pik_cache_add(cache, kdk, pik, kdk, 32, 0) < 0 ||
+	    cache->count != 2 || nan_pik_cache_get(cache, init) ||
+	    !nan_pik_cache_get(cache, resp))
+		goto out;
+	nan_pik_cache_remove(cache, resp);
+	if (nan_pik_cache_get(cache, resp) || cache->count != 1 ||
+	    !nan_pik_cache_get(cache, kdk))
+		goto out;
+	ret = 0;
+out:
+	if (ret)
+		wpa_printf(MSG_ERROR, "FAIL: PIK cache");
+	forced_memzero(pik, sizeof(pik));
+	forced_memzero(other, sizeof(other));
+	nan_pik_cache_deinit(cache);
+	return ret;
+}
+
+
 /**
  * nan_pkbst_tests - Run NAN PKBST unit tests
  * Returns: 0 on success, -1 on failure
@@ -862,7 +920,7 @@ int nan_pkbst_tests(void)
 	if (test_pkr_usable() || test_pkr_signature() || test_pkr_encode() ||
 	    test_pkr_parse() || test_pkr_parse_optional() || test_pkra() ||
 	    test_pkbst_password() || test_fkce() || test_self_pkr() ||
-	    test_peer_pkr() || test_generate_self_pkr())
+	    test_peer_pkr() || test_generate_self_pkr() || test_pik())
 		return -1;
 	return 0;
 }

@@ -2125,3 +2125,112 @@ void nan_add_kde_hdr(struct wpabuf *buf, u32 kde, size_t data_len)
 	wpabuf_put_u8(buf, RSN_SELECTOR_LEN + data_len);
 	RSN_SELECTOR_PUT(wpabuf_put(buf, RSN_SELECTOR_LEN), kde);
 }
+
+
+/**
+ * nan_pik_cache_init - Allocate a Pairwise Identity Key cache
+ * @max_entries: Maximum number of peers
+ * Returns: Cache or %NULL on failure
+ */
+struct nan_pik_cache * nan_pik_cache_init(unsigned int max_entries)
+{
+	struct nan_pik_cache *cache;
+
+	if (!max_entries)
+		return NULL;
+	cache = os_zalloc(sizeof(*cache));
+	if (!cache)
+		return NULL;
+	cache->entries = os_calloc(max_entries, sizeof(*cache->entries));
+	if (!cache->entries) {
+		os_free(cache);
+		return NULL;
+	}
+	cache->max_entries = max_entries;
+	return cache;
+}
+
+
+/**
+ * nan_pik_cache_deinit - Free a Pairwise Identity Key cache
+ * @cache: Cache from nan_pik_cache_init()
+ */
+void nan_pik_cache_deinit(struct nan_pik_cache *cache)
+{
+	if (!cache)
+		return;
+	bin_clear_free(cache->entries,
+		       cache->max_entries * sizeof(*cache->entries));
+	os_free(cache);
+}
+
+
+const struct nan_pik_cache_entry *
+nan_pik_cache_get(const struct nan_pik_cache *cache, const u8 *nmi_addr)
+{
+	size_t i;
+
+	if (!cache || !nmi_addr)
+		return NULL;
+	for (i = 0; i < cache->count; i++) {
+		if (ether_addr_equal(cache->entries[i].nmi_addr, nmi_addr))
+			return &cache->entries[i];
+	}
+	return NULL;
+}
+
+
+void nan_pik_cache_remove(struct nan_pik_cache *cache, const u8 *nmi_addr)
+{
+	const struct nan_pik_cache_entry *entry;
+	size_t idx;
+
+	entry = nan_pik_cache_get(cache, nmi_addr);
+	if (!entry)
+		return;
+	idx = entry - cache->entries;
+	os_memmove(&cache->entries[idx], &cache->entries[idx + 1],
+		   (cache->count - idx - 1) * sizeof(*entry));
+	cache->count--;
+	forced_memzero(&cache->entries[cache->count], sizeof(*entry));
+}
+
+
+/**
+ * nan_pik_cache_add - Add or update the Pairwise Identity of a peer
+ * @cache: PIK cache
+ * @nmi_addr: Peer NMI address
+ * @pik: Pairwise Identity Key
+ * @npk: NAN Pairing Key
+ * @npk_len: Length of @npk
+ * @akmp: AKMP used to establish the NPKSA
+ * Returns: 0 on success, -1 on failure
+ *
+ * The entry of the peer is the most recent one. When the cache is full, the
+ * least recently added entry is replaced.
+ */
+int nan_pik_cache_add(struct nan_pik_cache *cache, const u8 *nmi_addr,
+		      const u8 *pik, const u8 *npk, size_t npk_len, int akmp)
+{
+	struct nan_pik_cache_entry *entry;
+
+	if (!cache || !nmi_addr || !pik || !npk || !npk_len ||
+	    npk_len > PMK_LEN_MAX)
+		return -1;
+
+	nan_pik_cache_remove(cache, nmi_addr);
+	if (cache->count == cache->max_entries) {
+		wpa_printf(MSG_DEBUG, "NAN: PIK cache full, drop " MACSTR,
+			   MAC2STR(cache->entries[0].nmi_addr));
+		nan_pik_cache_remove(cache, cache->entries[0].nmi_addr);
+	}
+
+	entry = &cache->entries[cache->count++];
+	os_memcpy(entry->nmi_addr, nmi_addr, ETH_ALEN);
+	os_memcpy(entry->pik, pik, NAN_PIK_LEN);
+	os_memcpy(entry->npk, npk, npk_len);
+	entry->npk_len = npk_len;
+	entry->akmp = akmp;
+	wpa_printf(MSG_DEBUG, "NAN: PIK cached for " MACSTR, MAC2STR(nmi_addr));
+	return 0;
+}

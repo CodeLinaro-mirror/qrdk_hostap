@@ -485,6 +485,40 @@ struct nan_ndl {
 };
 
 /**
+ * struct nan_pik_cache_entry - Cached pairwise identity of a peer
+ * @nmi_addr: NMI address of the peer at pairing time
+ * @pik: Pairwise Identity Key
+ * @npk: NAN Pairing Key used for pairing verification with the peer
+ * @npk_len: Length of @npk
+ * @akmp: AKMP used to establish the NPKSA
+ */
+struct nan_pik_cache_entry {
+	u8 nmi_addr[ETH_ALEN];
+	u8 pik[NAN_PIK_LEN];
+	u8 npk[PMK_LEN_MAX];
+	size_t npk_len;
+	int akmp;
+};
+
+/**
+ * struct nan_pik_cache - Pairwise Identity Keys of paired peers
+ * @entries: Cached entries; the first @count are in use
+ * @max_entries: Total number of entries in @entries
+ * @count: Number of entries in use
+ */
+struct nan_pik_cache {
+	struct nan_pik_cache_entry *entries;
+	unsigned int max_entries;
+	unsigned int count;
+};
+
+int nan_pik_cache_add(struct nan_pik_cache *cache, const u8 *nmi_addr,
+		      const u8 *pik, const u8 *npk, size_t npk_len, int akmp);
+const struct nan_pik_cache_entry *
+nan_pik_cache_get(const struct nan_pik_cache *cache, const u8 *nmi_addr);
+void nan_pik_cache_remove(struct nan_pik_cache *cache, const u8 *nmi_addr);
+
+/**
  * enum nan_pkbst_mode - PKBST method negotiated with a peer
  * @NAN_PKBST_MODE_NONE: PKBST not used
  * @NAN_PKBST_MODE_ONE_WAY: One-way PKBST
@@ -927,6 +961,9 @@ struct wpabuf * nan_crypto_sign_pkr(const u8 *isk, const u8 *data,
 int nan_crypto_derive_pkbst_password(const u8 *ipk_pub, const u8 *ipk_sub,
 				     const u8 *initiator_nmi,
 				     const u8 *responder_nmi, u8 *password);
+int nan_crypto_derive_pik(const u8 *nm_kdk, size_t nm_kdk_len,
+			  const u8 *initiator_nmi, const u8 *responder_nmi,
+			  u8 *pik);
 struct sae_data;
 struct wpabuf * nan_crypto_build_fkce_input(const struct sae_data *sae,
 					    const u8 *ipk,

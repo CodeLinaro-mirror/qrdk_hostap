@@ -14,6 +14,7 @@
 #include "utils/list.h"
 
 struct nan_cluster_config;
+struct nan_pik_cache;
 enum nan_reason;
 struct ieee80211_mgmt;
 
@@ -1003,6 +1004,9 @@ int nan_pairing_set_peer_pkr(struct nan_data *nan, const u8 *peer_addr,
 int nan_pairing_generate_self_pkr(struct nan_data *nan);
 void nan_pairing_set_pkr_op_ctrl(struct nan_data *nan, u16 op_ctrl);
 struct wpabuf * nan_pairing_get_self_pkr(struct nan_data *nan);
+
+struct nan_pik_cache * nan_pik_cache_init(unsigned int max_entries);
+void nan_pik_cache_deinit(struct nan_pik_cache *cache);
 bool nan_pairing_is_peer_paired(struct nan_data *nan_data, const u8 *peer_addr);
 int nan_pairing_abort(struct nan_data *nan_data, const u8 *peer_addr);
 void nan_pairing_unpair_peer(struct nan_data *nan_data, const u8 *peer_addr);

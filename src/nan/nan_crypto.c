@@ -1210,3 +1210,39 @@ int nan_crypto_verify_fkce(const u8 *ipk, const struct wpabuf *input,
 					       wpabuf_len(input),
 					       key_auth, key_auth_len);
 }
+
+
+/**
+ * nan_crypto_derive_pik - Derive the Pairwise Identity Key (PIK)
+ * @nm_kdk: NM-KDK of the pairing
+ * @nm_kdk_len: Length of @nm_kdk
+ * @initiator_nmi: Pairing Initiator NMI
+ * @responder_nmi: Pairing Responder NMI
+ * @pik: Buffer for the NAN_PIK_LEN octet PIK
+ * Returns: 0 on success, -1 on failure
+ *
+ * Wi-Fi Aware spec R5, section 7.6.4.2:
+ * PIK = Truncate-128(KDF-HASH-256(NM-KDK, "Pairwise PIK Derivation",
+ *                    Initiator NMI || Responder NMI)).
+ * The KDF output is 256 bits and that is then truncated to 128 bits, which
+ * differs from requesting a 128-bit output from the KDF.
+ */
+int nan_crypto_derive_pik(const u8 *nm_kdk, size_t nm_kdk_len,
+			  const u8 *initiator_nmi, const u8 *responder_nmi,
+			  u8 *pik)
+{
+	u8 out[SHA256_MAC_LEN];
+	int ret;
+
+	if (!pik)
+		return -1;
+	ret = nan_crypto_derive_from_kdk(nm_kdk, nm_kdk_len,
+					 NAN_CS_PK_PASN_128,
+					 "Pairwise PIK Derivation",
+					 initiator_nmi, responder_nmi,
+					 out, sizeof(out));
+	if (ret == 0)
+		os_memcpy(pik, out, NAN_PIK_LEN);
+	forced_memzero(out, sizeof(out));
+	return ret ? -1 : 0;
+}
