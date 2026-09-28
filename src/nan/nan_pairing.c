@@ -48,6 +48,61 @@ bool nan_pairing_is_pkr_usable(const struct nan_pkr *pkr)
 				   (os_time_t) pkr->valid_duration * 60);
 }
 
+
+/**
+ * nan_pkr_encode - Encode and sign a Public Key Record
+ * @buf: Buffer to append the record to
+ * @pkr: Record to encode
+ * @isk: Individual Secret Key associated with @pkr->ipk
+ * Returns: 0 on success, -1 on failure
+ *
+ * Wi-Fi Aware spec R5, Table 34: Length | Version | Record Control | Cipher
+ * Version | IPK | IIK | Valid Duration | Record Signature, big-endian. The
+ * signature covers the fields after Length and is mandatory, so a record is
+ * never emitted without it. The ISK is passed separately so that record
+ * structures never hold secret keys.
+ */
+int nan_pkr_encode(struct wpabuf *buf, const struct nan_pkr *pkr, const u8 *isk)
+{
+	struct wpabuf *data, *sig = NULL;
+	size_t len;
+	int ret = -1;
+
+	if (!buf || !pkr || !pkr->valid || !isk)
+		return -1;
+
+	data = wpabuf_alloc(1 + 3 + 1 + NAN_IPK_LEN + NAN_IIK_LEN + 4);
+	if (!data)
+		return -1;
+	wpabuf_put_u8(data, NAN_PKR_VERSION);
+	wpabuf_put_u8(data, 0); /* Record Configuration */
+	wpabuf_put_be16(data, pkr->op_ctrl);
+	wpabuf_put_u8(data, NAN_PKR_CIPHER_VERSION_0);
+	wpabuf_put_data(data, pkr->ipk, NAN_IPK_LEN);
+	wpabuf_put_data(data, pkr->iik, NAN_IIK_LEN);
+	wpabuf_put_be32(data, pkr->valid_duration);
+
+	sig = nan_crypto_sign_pkr(isk, wpabuf_head(data), wpabuf_len(data));
+	if (!sig)
+		goto out;
+
+	len = wpabuf_len(data) + wpabuf_len(sig);
+	if (len > 0xffff || wpabuf_tailroom(buf) < 2 + len) {
+		wpa_printf(MSG_DEBUG, "NAN: No room for PKR (len=%zu)", len);
+		goto out;
+	}
+
+	wpabuf_put_be16(buf, len);
+	wpabuf_put_buf(buf, data);
+	wpabuf_put_buf(buf, sig);
+	ret = 0;
+out:
+	wpabuf_free(sig);
+	wpabuf_free(data);
+	return ret;
+}
+
+
 /**
  * nan_nira_get_tag_nonce - Generate NIRA nonce and compute NIRA tag
  * @nan: Pointer to NAN configuration structure

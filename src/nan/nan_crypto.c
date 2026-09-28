@@ -1026,3 +1026,36 @@ out:
 	crypto_ec_key_deinit(key);
 	return ret;
 }
+
+
+/**
+ * nan_crypto_sign_pkr - Generate a PKR signature
+ * @isk: P-256 Individual Secret Key (NAN_ISK_LEN octets)
+ * @data: Record after the Length field up to the Record Signature
+ * @data_len: Length of @data
+ * Returns: DER-encoded ECDSA signature or %NULL on failure
+ */
+struct wpabuf * nan_crypto_sign_pkr(const u8 *isk, const u8 *data,
+				    size_t data_len)
+{
+	struct crypto_ec_key *key;
+	struct wpabuf *sig = NULL;
+	u8 digest[SHA256_MAC_LEN];
+
+	if (!isk || !data || !data_len)
+		return NULL;
+
+	key = crypto_ec_key_set_priv(19, isk, NAN_ISK_LEN);
+	if (!key) {
+		wpa_printf(MSG_DEBUG, "NAN: PKR signature: failed to load ISK");
+		return NULL;
+	}
+
+	if (nan_crypto_sha256(data, data_len, digest) == 0)
+		sig = crypto_ec_key_sign(key, digest, sizeof(digest));
+	if (!sig)
+		wpa_printf(MSG_DEBUG, "NAN: PKR signature: signing failed");
+
+	crypto_ec_key_deinit(key);
+	return sig;
+}

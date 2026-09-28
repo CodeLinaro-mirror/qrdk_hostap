@@ -74,13 +74,12 @@ static int test_pkr_usable(void)
 }
 
 
-static int test_gen_key(struct crypto_ec_key **key, u8 *ipk)
+static int test_gen_key(struct crypto_ec_key **key, u8 *ipk, u8 *isk)
 {
 	struct wpabuf *spki = NULL;
+	struct crypto_bignum *priv = NULL;
 	int ret = -1;
 
-	if (!key || !ipk)
-		return -1;
 	*key = crypto_ec_key_gen(19);
 	if (!*key)
 		return -1;
@@ -91,8 +90,16 @@ static int test_gen_key(struct crypto_ec_key **key, u8 *ipk)
 	/* The compressed point follows the SubjectPublicKeyInfo prefix. */
 	os_memcpy(ipk, wpabuf_head_u8(spki) + wpabuf_len(spki) - NAN_IPK_LEN,
 		  NAN_IPK_LEN);
+	if (isk) {
+		priv = crypto_ec_key_get_private_key(*key);
+		if (!priv ||
+		    crypto_bignum_to_bin(priv, isk, NAN_ISK_LEN,
+					 NAN_ISK_LEN) < 0)
+			goto out;
+	}
 	ret = 0;
 out:
+	crypto_bignum_deinit(priv, 1);
 	wpabuf_free(spki);
 	if (ret) {
 		crypto_ec_key_deinit(*key);
@@ -114,8 +121,8 @@ static int test_pkr_signature(void)
 	size_t sig_len;
 	int ret = -1;
 
-	if (test_gen_key(&key, ipk) < 0 ||
-	    test_gen_key(&wrong_key, wrong_ipk) < 0)
+	if (test_gen_key(&key, ipk, NULL) < 0 ||
+	    test_gen_key(&wrong_key, wrong_ipk, NULL) < 0)
 		goto out;
 
 	if (sha256_vector(1, addr, len, digest) < 0)
@@ -159,13 +166,72 @@ out:
 }
 
 
+static int test_pkr_encode(void)
+{
+	struct crypto_ec_key *key = NULL;
+	struct nan_pkr pkr;
+	struct wpabuf *buf = NULL, *small = NULL;
+	u8 isk[NAN_ISK_LEN];
+	const size_t data_len = 1 + 3 + 1 + NAN_IPK_LEN + NAN_IIK_LEN + 4;
+	const u8 *pos;
+	int ret = -1;
+
+	os_memset(&pkr, 0, sizeof(pkr));
+	if (test_gen_key(&key, pkr.ipk, isk) < 0)
+		goto out;
+	os_memset(pkr.iik, 0x11, NAN_IIK_LEN);
+	pkr.op_ctrl = NAN_PKR_OP_CTRL_ONE_TIME_USE;
+	pkr.valid_duration = 30;
+	pkr.valid = true;
+
+	buf = wpabuf_alloc(256);
+	if (!buf || nan_pkr_encode(buf, &pkr, isk) < 0)
+		goto out;
+	pos = wpabuf_head_u8(buf);
+	if (wpabuf_len(buf) <= 2 + data_len ||
+	    WPA_GET_BE16(pos) != wpabuf_len(buf) - 2 ||
+	    pos[2] != NAN_PKR_VERSION || pos[3] != 0 ||
+	    WPA_GET_BE16(&pos[4]) != NAN_PKR_OP_CTRL_ONE_TIME_USE ||
+	    pos[6] != NAN_PKR_CIPHER_VERSION_0 ||
+	    os_memcmp(&pos[7], pkr.ipk, NAN_IPK_LEN) != 0 ||
+	    os_memcmp(&pos[7 + NAN_IPK_LEN], pkr.iik, NAN_IIK_LEN) != 0 ||
+	    WPA_GET_BE32(&pos[7 + NAN_IPK_LEN + NAN_IIK_LEN]) != 30)
+		goto out;
+	if (nan_crypto_verify_pkr_signature(pkr.ipk,
+					    pos + 2, data_len,
+					    pos + 2 + data_len,
+					    wpabuf_len(buf) - 2 - data_len) !=
+	    0)
+		goto out;
+
+	/* Unsigned, invalid, or truncated output must not be produced */
+	small = wpabuf_alloc(2 + data_len);
+	if (!small || nan_pkr_encode(buf, &pkr, NULL) == 0 ||
+	    nan_pkr_encode(small, &pkr, isk) == 0 || wpabuf_len(small))
+		goto out;
+	pkr.valid = false;
+	if (nan_pkr_encode(buf, &pkr, isk) == 0)
+		goto out;
+
+	ret = 0;
+out:
+	if (ret)
+		wpa_printf(MSG_ERROR, "FAIL: PKR encoding");
+	forced_memzero(isk, sizeof(isk));
+	wpabuf_free(small);
+	wpabuf_free(buf);
+	crypto_ec_key_deinit(key);
+	return ret;
+}
+
+
 /**
  * nan_pkbst_tests - Run NAN PKBST unit tests
  * Returns: 0 on success, -1 on failure
  */
 int nan_pkbst_tests(void)
 {
-	if (test_pkr_usable() || test_pkr_signature())
+	if (test_pkr_usable() || test_pkr_signature() || test_pkr_encode())
 		return -1;
 	return 0;
 }

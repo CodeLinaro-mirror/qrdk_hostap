@@ -718,6 +718,10 @@ struct nan_assoc_nik_entry {
 #define NAN_PKR_OP_CTRL_ONE_TIME_USE	BIT(1)
 #define NAN_PKR_OP_CTRL_REVOKED		BIT(2)
 
+/* Wi-Fi Aware spec R5, Table 34 (PKR format) and Table 36 */
+#define NAN_PKR_VERSION			0
+#define NAN_PKR_CIPHER_VERSION_0	0
+
 /* Wi-Fi Aware R5 spec, Table 156 (PTA format) */
 #define NAN_PTA_CTRL_TLV_PRESENT	BIT(0)
 #define NAN_PTA_TYPE_MASK		0x0f

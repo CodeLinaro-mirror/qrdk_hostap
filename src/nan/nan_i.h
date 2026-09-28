@@ -28,6 +28,7 @@ struct nan_config;
 #define NAN_IPK_LEN	33	/* Compressed P-256 public key */
 /* RFC 5480 SubjectPublicKeyInfo DER prefix for a compressed P-256 key */
 #define NAN_IPK_SPKI_PREFIX_LEN	26
+#define NAN_ISK_LEN	32	/* P-256 private key */
 
 #define NAN_ELEMENT_MAX_SIZE 1024
 
@@ -50,6 +51,8 @@ struct nan_pkr {
 };
 
 bool nan_pairing_is_pkr_usable(const struct nan_pkr *pkr);
+int nan_pkr_encode(struct wpabuf *buf, const struct nan_pkr *pkr,
+		   const u8 *isk);
 
 /**
  * struct nan_ptk - NAN Pairwise Transient Key
@@ -869,6 +872,8 @@ int nan_crypto_key_mic(const u8 *buf, size_t len, const u8 *kck,
 int nan_crypto_verify_pkr_signature(const u8 *ipk,
 				    const u8 *data, size_t data_len,
 				    const u8 *sig, size_t sig_len);
+struct wpabuf * nan_crypto_sign_pkr(const u8 *isk, const u8 *data,
+				    size_t data_len);
 int nan_crypto_derive_npk(const u8 *kdk, size_t kdk_len,
 			  enum nan_cipher_suite_id cipher,
 			  const u8 *initiator_nmi, const u8 *responder_nmi,
