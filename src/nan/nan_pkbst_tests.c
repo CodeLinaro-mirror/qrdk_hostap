@@ -802,6 +802,57 @@ out:
 }
 
 
+static int test_generate_self_pkr(void)
+{
+	struct nan_data nan;
+	struct nan_pkr first;
+	struct wpabuf *buf = NULL;
+	struct nan_pkr parsed;
+	int ret = -1;
+
+	os_memset(&nan, 0, sizeof(nan));
+	dl_list_init(&nan.self_nik_list);
+	dl_list_init(&nan.peer_nik_list);
+	dl_list_init(&nan.group_nik_list);
+
+	buf = wpabuf_alloc(512);
+	if (!buf || nan_pairing_generate_self_pkr(&nan) < 0 ||
+	    !nan_pairing_is_pkr_usable(&nan.self_pkr) ||
+	    nan.self_pkr.num_giks != 1 ||
+	    !test_has_nik(&nan, NAN_NIK_TYPE_SELF, nan.self_pkr.iik) ||
+	    /* The generated ISK signs records verifiable with the IPK */
+	    test_pkr_blob(buf, &nan.self_pkr, nan.self_isk) < 0 ||
+	    nan_pkr_parse(wpabuf_head_u8(buf) + 1, wpabuf_len(buf) - 1,
+			  &parsed) < 0)
+		goto out;
+
+	/* Regeneration: new individual identity, same group and policy */
+	nan.self_pkr.op_ctrl = NAN_PKR_OP_CTRL_ONE_TIME_USE;
+	nan.self_pkr.valid_duration = 5;
+	first = nan.self_pkr;
+	if (nan_pairing_generate_self_pkr(&nan) < 0 ||
+	    os_memcmp(nan.self_pkr.ipk, first.ipk, NAN_IPK_LEN) == 0 ||
+	    os_memcmp(nan.self_pkr.iik, first.iik, NAN_IIK_LEN) == 0 ||
+	    os_memcmp(nan.self_pkr.giks, first.giks, sizeof(first.giks)) ||
+	    nan.self_pkr.num_giks != 1 ||
+	    nan.self_pkr.op_ctrl != NAN_PKR_OP_CTRL_ONE_TIME_USE ||
+	    nan.self_pkr.valid_duration != 5 ||
+	    test_has_nik(&nan, NAN_NIK_TYPE_SELF, first.iik) ||
+	    !test_has_nik(&nan, NAN_NIK_TYPE_SELF, nan.self_pkr.iik) ||
+	    !test_has_nik(&nan, NAN_NIK_TYPE_GROUP, first.giks[0]))
+		goto out;
+
+	ret = 0;
+out:
+	if (ret)
+		wpa_printf(MSG_ERROR, "FAIL: local PKR generation");
+	forced_memzero(nan.self_isk, sizeof(nan.self_isk));
+	nan_flush_niks(&nan);
+	wpabuf_free(buf);
+	return ret;
+}
+
+
 /**
  * nan_pkbst_tests - Run NAN PKBST unit tests
  * Returns: 0 on success, -1 on failure
@@ -811,7 +862,7 @@ int nan_pkbst_tests(void)
 	if (test_pkr_usable() || test_pkr_signature() || test_pkr_encode() ||
 	    test_pkr_parse() || test_pkr_parse_optional() || test_pkra() ||
 	    test_pkbst_password() || test_fkce() || test_self_pkr() ||
-	    test_peer_pkr())
+	    test_peer_pkr() || test_generate_self_pkr())
 		return -1;
 	return 0;
 }

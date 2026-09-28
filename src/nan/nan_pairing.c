@@ -11,6 +11,7 @@
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
 #include "common/nan_de.h"
+#include "crypto/crypto.h"
 #include "pasn/pasn_common.h"
 #include "nan/nan_i.h"
 
@@ -2331,6 +2332,95 @@ int nan_pairing_set_self_pkr(struct nan_data *nan, const u8 *blob,
 	nan_pairing_self_pkr_iks(nan, &nan->self_pkr, true);
 	wpa_printf(MSG_DEBUG, "NAN: Local PKR installed");
 	return 0;
+}
+
+
+/* Default Valid Duration of a locally generated record: one week */
+#define NAN_PKR_DEFAULT_VALID_DURATION (7 * 24 * 60)
+
+/* Generate a P-256 key pair; the IPK is the compressed public point */
+static int nan_pairing_gen_ipk(u8 *ipk, u8 *isk)
+{
+	struct crypto_ec_key *key;
+	struct crypto_bignum *priv = NULL;
+	struct wpabuf *spki = NULL;
+	int ret = -1;
+
+	key = crypto_ec_key_gen(19);
+	if (!key)
+		return -1;
+
+	/* SubjectPublicKeyInfo ends with the compressed point */
+	spki = crypto_ec_key_get_subject_public_key(key);
+	priv = crypto_ec_key_get_private_key(key);
+	if (!spki || wpabuf_len(spki) < NAN_IPK_LEN || !priv ||
+	    crypto_bignum_to_bin(priv, isk, NAN_ISK_LEN, NAN_ISK_LEN) < 0)
+		goto out;
+	os_memcpy(ipk, wpabuf_head_u8(spki) + wpabuf_len(spki) - NAN_IPK_LEN,
+		  NAN_IPK_LEN);
+	if (ipk[0] != 0x02 && ipk[0] != 0x03)
+		goto out;
+	ret = 0;
+out:
+	crypto_bignum_deinit(priv, 1);
+	wpabuf_free(spki);
+	crypto_ec_key_deinit(key);
+	return ret;
+}
+
+
+/**
+ * nan_pairing_generate_self_pkr - Generate a new local Public Key Record
+ * @nan: NAN data
+ * Returns: 0 on success, -1 on failure
+ *
+ * A new key pair and IIK are generated. Operation Control, Valid Duration,
+ * and the GIKs of the current record are kept, since group membership does
+ * not change with the individual identity; the first record gets one random
+ * GIK. The current record is replaced only if generation succeeds.
+ */
+int nan_pairing_generate_self_pkr(struct nan_data *nan)
+{
+	struct nan_pkr pkr;
+	u8 isk[NAN_ISK_LEN];
+	int ret = -1;
+
+	if (!nan)
+		return -1;
+
+	os_memset(&pkr, 0, sizeof(pkr));
+	if (nan->self_pkr.valid) {
+		pkr.op_ctrl = nan->self_pkr.op_ctrl & ~NAN_PKR_OP_CTRL_REVOKED;
+		pkr.valid_duration = nan->self_pkr.valid_duration;
+		pkr.num_giks = nan->self_pkr.num_giks;
+		os_memcpy(pkr.giks, nan->self_pkr.giks, sizeof(pkr.giks));
+	}
+	if (!pkr.valid_duration)
+		pkr.valid_duration = NAN_PKR_DEFAULT_VALID_DURATION;
+	if (!pkr.num_giks) {
+		pkr.num_giks = 1;
+		if (os_get_random(pkr.giks[0], NAN_GIK_LEN) < 0)
+			goto out;
+	}
+
+	if (nan_pairing_gen_ipk(pkr.ipk, isk) < 0 ||
+	    os_get_random(pkr.iik, NAN_IIK_LEN) < 0) {
+		wpa_printf(MSG_INFO, "NAN: Failed to generate PKR keys");
+		goto out;
+	}
+	pkr.valid = true;
+	os_get_reltime(&pkr.created_at);
+
+	nan_pairing_self_pkr_iks(nan, &nan->self_pkr, false);
+	nan->self_pkr = pkr;
+	os_memcpy(nan->self_isk, isk, NAN_ISK_LEN);
+	nan_pairing_self_pkr_iks(nan, &nan->self_pkr, true);
+	wpa_printf(MSG_DEBUG, "NAN: Local PKR generated (GIKs=%u)",
+		   pkr.num_giks);
+	ret = 0;
+out:
+	forced_memzero(isk, sizeof(isk));
+	return ret;
 }
 
 
