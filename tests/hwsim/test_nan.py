@@ -2948,3 +2948,91 @@ def test_nan_pkbst_pik_verification_restart(dev, apdev):
             raise Exception("Rediscovery not seen")
         pub.wpas.wait_event(["NAN-REPLIED"], timeout=2)
         run_nan_pairing(sub, pub, pid, sid, "PMK")
+
+def pkbst_paired(pub, sub, mutual=False):
+    if mutual:
+        pkbst_config(pub, 2, self_pkr=PKR_B, self_isk=ISK_B, peer_pkr=PKR_A)
+        pkbst_config(sub, 2, self_pkr=PKR_A, self_isk=ISK_A, peer_pkr=PKR_B)
+        method = 2
+    else:
+        pkbst_config(pub, 1, self_pkr=PKR_A, self_isk=ISK_A)
+        pkbst_config(sub, 1, peer_pkr=PKR_A)
+        method = 1
+    pid, sid = pkbst_discover_bootstrap(pub, sub, method, pub_pbm=0x06)
+    run_nan_pairing(sub, pub, pid, sid, "SAE", password="unused")
+    # Allow keys to be installed before protected frames are sent
+    time.sleep(0.2)
+    pub.wpas.dump_monitor()
+    sub.wpas.dump_monitor()
+
+def run_nan_pkbst_record_update(mutual, sender, send_revoked):
+    with hwsim_nan_radios(count=2) as [wpas1, wpas2], \
+         NanDevice(wpas1, "nan0") as pub, NanDevice(wpas2, "nan1") as sub:
+        pkbst_paired(pub, sub, mutual=mutual)
+        if sender == "pub":
+            tx, rx = pub, sub
+            old_iik = IIK_B if mutual else IIK_A
+        else:
+            tx, rx = sub, pub
+            old_iik = IIK_A
+
+        command = "NAN_UPDATE_PKR peer_nmi=%s generate=1 send=1" % \
+            rx.wpas.own_addr()
+        if send_revoked:
+            command += " send_revoked=1"
+        if "OK" not in tx.wpas.request(command):
+            raise Exception("NAN_UPDATE_PKR failed: " + command)
+
+        new = tx.wpas.request("NAN_GET self_pkr").strip()
+        new_iik = new[82:114]
+        peer_addr = tx.wpas.own_addr()
+
+        if send_revoked:
+            ev = rx.wpas.wait_event(["NAN-PKR-UPDATE"], timeout=3)
+            if ev is None or "addr=" + peer_addr not in ev or \
+               "iik=" + old_iik not in ev or "revoked=1" not in ev:
+                raise Exception("Unexpected revocation event: " + str(ev))
+
+        ev = rx.wpas.wait_event(["NAN-PKR-UPDATE"], timeout=3)
+        if ev is None or "addr=" + peer_addr not in ev or \
+           "iik=" + new_iik not in ev or "revoked=0" not in ev:
+            raise Exception("Unexpected update event: " + str(ev))
+
+def test_nan_pkbst_record_update(dev, apdev):
+    """NAN one-way PKBST update with revocation from the publisher"""
+    run_nan_pkbst_record_update(False, "pub", True)
+
+def test_nan_pkbst_record_update_one_way(dev, apdev):
+    """NAN one-way PKBST update without revocation"""
+    run_nan_pkbst_record_update(False, "pub", False)
+
+def test_nan_pkbst_record_update_mutual_publisher(dev, apdev):
+    """NAN mutual PKBST update with revocation from the publisher"""
+    run_nan_pkbst_record_update(True, "pub", True)
+
+def test_nan_pkbst_record_update_mutual_publisher_no_revoke(dev, apdev):
+    """NAN mutual PKBST update without revocation from the publisher"""
+    run_nan_pkbst_record_update(True, "pub", False)
+
+def test_nan_pkbst_record_update_mutual_subscriber(dev, apdev):
+    """NAN mutual PKBST update with revocation from the subscriber"""
+    run_nan_pkbst_record_update(True, "sub", True)
+
+def test_nan_pkbst_record_update_mutual_subscriber_no_revoke(dev, apdev):
+    """NAN mutual PKBST update without revocation from the subscriber"""
+    run_nan_pkbst_record_update(True, "sub", False)
+
+def test_nan_pkbst_record_update_not_paired(dev, apdev):
+    """NAN PKBST record update is not sent to a peer that is not paired"""
+    with hwsim_nan_radios(count=2) as [wpas1, wpas2], \
+         NanDevice(wpas1, "nan0") as pub, NanDevice(wpas2, "nan1") as sub:
+        pkbst_config(pub, 1, self_pkr=PKR_A, self_isk=ISK_A)
+        pkbst_config(sub, 1, peer_pkr=PKR_A)
+        pkbst_discover_bootstrap(pub, sub, 1, pub_pbm=0x06)
+        if "FAIL" not in pub.wpas.request(
+                "NAN_UPDATE_PKR peer_nmi=%s send=1" %
+                sub.wpas.own_addr()):
+            raise Exception("Update to an unpaired peer accepted")
+        if "FAIL" not in pub.wpas.request(
+                "NAN_UPDATE_PKR generate=1 send=1"):
+            raise Exception("Update without peer accepted")
