@@ -2278,6 +2278,33 @@ static int nan_pairing_parse_pkr_blob(const u8 *blob, size_t len,
 }
 
 
+/*
+ * The IIK of the local record resolves Source NAN Tags and its GIKs resolve
+ * Group NAN Tags (Wi-Fi Aware spec R5, Table 24), so keep them in the identity
+ * key lists that tag generation and resolution use.
+ */
+static void nan_pairing_self_pkr_iks(struct nan_data *nan,
+				     const struct nan_pkr *pkr, bool add)
+{
+	unsigned int i;
+
+	if (!pkr->valid)
+		return;
+
+	if (add)
+		nan_add_nik(nan, pkr->iik, NAN_NIK_TYPE_SELF, true);
+	else
+		nan_remove_nik(nan, pkr->iik, NAN_NIK_TYPE_SELF);
+	for (i = 0; i < pkr->num_giks; i++) {
+		if (add)
+			nan_add_nik(nan, pkr->giks[i], NAN_NIK_TYPE_GROUP,
+				    true);
+		else
+			nan_remove_nik(nan, pkr->giks[i], NAN_NIK_TYPE_GROUP);
+	}
+}
+
+
 /**
  * nan_pairing_set_self_pkr - Install the local Public Key Record
  * @nan: NAN data
@@ -2299,7 +2326,9 @@ int nan_pairing_set_self_pkr(struct nan_data *nan, const u8 *blob,
 	if (!nan->self_pkr.valid ||
 	    os_memcmp(nan->self_pkr.ipk, pkr.ipk, NAN_IPK_LEN) != 0)
 		os_memset(nan->self_isk, 0, sizeof(nan->self_isk));
+	nan_pairing_self_pkr_iks(nan, &nan->self_pkr, false);
 	nan->self_pkr = pkr;
+	nan_pairing_self_pkr_iks(nan, &nan->self_pkr, true);
 	wpa_printf(MSG_DEBUG, "NAN: Local PKR installed");
 	return 0;
 }

@@ -4057,6 +4057,30 @@ static void nan_flush_nik_list(struct dl_list *list)
 }
 
 
+/**
+ * nan_remove_nik - Remove an identity key from a NIK list
+ * @nan: NAN data
+ * @nik: Identity key to remove
+ * @type: List to remove it from
+ */
+void nan_remove_nik(struct nan_data *nan, const u8 *nik,
+		    enum nan_nik_type type)
+{
+	struct dl_list *list = nan_get_nik_list(nan, type);
+	struct nan_nik_entry *entry;
+
+	if (!list || !nik)
+		return;
+
+	dl_list_for_each(entry, list, struct nan_nik_entry, list) {
+		if (os_memcmp(entry->nik, nik, NAN_NIK_LEN) == 0) {
+			nan_free_nik_entry(entry);
+			return;
+		}
+	}
+}
+
+
 void nan_flush_niks(struct nan_data *nan)
 {
 	if (!nan)

@@ -658,6 +658,20 @@ static int test_pkr_blob(struct wpabuf *buf, const struct nan_pkr *pkr,
 }
 
 
+static bool test_has_nik(struct nan_data *nan, enum nan_nik_type type,
+			 const u8 *nik)
+{
+	struct nan_nik_entry *entry;
+
+	dl_list_for_each(entry, nan_get_nik_list(nan, type),
+			 struct nan_nik_entry, list) {
+		if (os_memcmp(entry->nik, nik, NAN_NIK_LEN) == 0)
+			return entry->possessed_nik;
+	}
+	return false;
+}
+
+
 static int test_self_pkr(void)
 {
 	static const u8 zero_isk[NAN_ISK_LEN];
@@ -670,14 +684,23 @@ static int test_self_pkr(void)
 	int ret = -1;
 
 	os_memset(&nan, 0, sizeof(nan));
+	dl_list_init(&nan.self_nik_list);
+	dl_list_init(&nan.peer_nik_list);
+	dl_list_init(&nan.group_nik_list);
 	buf = wpabuf_alloc(512);
 	if (!buf || test_make_pkr(&pkr, isk) < 0 ||
-	    test_make_pkr(&other, other_isk) < 0 ||
-	    test_pkr_blob(buf, &pkr, isk) < 0 ||
+	    test_make_pkr(&other, other_isk) < 0)
+		goto out;
+	pkr.num_giks = 1;
+	os_memset(pkr.giks[0], 0x44, NAN_GIK_LEN);
+	os_memset(other.iik, 0x33, NAN_IIK_LEN);
+	if (test_pkr_blob(buf, &pkr, isk) < 0 ||
 	    nan_pairing_set_self_pkr(&nan, wpabuf_head(buf),
 				     wpabuf_len(buf)) < 0 ||
 	    nan_pairing_set_self_isk(&nan, isk, sizeof(isk)) < 0 ||
-	    os_memcmp(nan.self_pkr.ipk, pkr.ipk, NAN_IPK_LEN) != 0)
+	    os_memcmp(nan.self_pkr.ipk, pkr.ipk, NAN_IPK_LEN) != 0 ||
+	    !test_has_nik(&nan, NAN_NIK_TYPE_SELF, pkr.iik) ||
+	    !test_has_nik(&nan, NAN_NIK_TYPE_GROUP, pkr.giks[0]))
 		goto out;
 
 	/* An invalid record leaves the installed record and ISK in place */
@@ -700,7 +723,11 @@ static int test_self_pkr(void)
 	    nan_pairing_set_self_pkr(&nan, wpabuf_head(buf),
 				     wpabuf_len(buf)) < 0 ||
 	    os_memcmp(nan.self_isk, zero_isk, NAN_ISK_LEN) != 0 ||
-	    nan_pairing_set_self_isk(&nan, isk, 16) == 0)
+	    nan_pairing_set_self_isk(&nan, isk, 16) == 0 ||
+	    /* Keys of the replaced record are no longer used */
+	    test_has_nik(&nan, NAN_NIK_TYPE_SELF, pkr.iik) ||
+	    test_has_nik(&nan, NAN_NIK_TYPE_GROUP, pkr.giks[0]) ||
+	    !test_has_nik(&nan, NAN_NIK_TYPE_SELF, other.iik))
 		goto out;
 
 	ret = 0;
@@ -710,6 +737,7 @@ out:
 	forced_memzero(isk, sizeof(isk));
 	forced_memzero(other_isk, sizeof(other_isk));
 	forced_memzero(nan.self_isk, sizeof(nan.self_isk));
+	nan_flush_niks(&nan);
 	wpabuf_free(buf);
 	return ret;
 }

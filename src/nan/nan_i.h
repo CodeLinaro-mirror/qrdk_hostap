@@ -64,6 +64,8 @@ int nan_pkr_encode(struct wpabuf *buf, const struct nan_pkr *pkr,
 int nan_pkr_parse(const u8 *data, size_t len, struct nan_pkr *pkr);
 int nan_pkra_encode(struct wpabuf *buf, const struct nan_pkr *pkrs[],
 		    const u8 *isks[], unsigned int num_pkrs);
+void nan_remove_nik(struct nan_data *nan, const u8 *nik,
+		    enum nan_nik_type type);
 int nan_pkra_parse(const u8 *data, size_t len,
 		   int (*cb)(void *ctx, const struct nan_pkr *pkr),
 		   void *ctx);
