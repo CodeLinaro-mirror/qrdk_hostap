@@ -4676,3 +4676,42 @@ struct dl_list * nan_get_nik_list(struct nan_data *nan, enum nan_nik_type type)
 		return NULL;
 	}
 }
+
+
+#ifdef CONFIG_PASN
+int nan_update_pkr(struct nan_data *nan, const u8 *peer_nmi, bool generate_new,
+		   int op_ctrl, bool send_new, bool send_revoked)
+{
+	struct nan_peer *peer;
+
+	if (peer_nmi) {
+		peer = nan_get_peer(nan, peer_nmi);
+		if (!peer)
+			return -1;
+	} else {
+		struct nan_peer *p;
+
+		peer = NULL;
+		dl_list_for_each(p, &nan->peer_list, struct nan_peer, list) {
+			if (p->pairing.flags & NAN_PAIRING_FLAG_PAIRED) {
+				peer = p;
+				break;
+			}
+		}
+		if (!peer)
+			return -1;
+	}
+
+	if (generate_new && nan_pairing_generate_self_pkr(nan) < 0)
+		return -1;
+
+	if (op_ctrl >= 0)
+		nan_pairing_set_pkr_op_ctrl(nan, (u16) op_ctrl);
+
+	if (send_new &&
+	    nan_pairing_send_pkr_update(nan, peer, send_revoked) < 0)
+		return -1;
+
+	return 0;
+}
+#endif /* CONFIG_PASN */

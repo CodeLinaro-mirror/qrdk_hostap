@@ -4584,6 +4584,50 @@ int wpas_nan_get_sae_pairing_pmkid(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_TESTING_OPTIONS */
 
 
+/*
+ * NAN_UPDATE_PKR [peer_nmi=<addr>] [generate=1] [send=1]
+ *                    [send_revoked=1] [op_ctrl=<n>]
+ */
+int wpas_nan_update_pkr(struct wpa_supplicant *wpa_s, char *cmd)
+{
+	char *token, *context = NULL;
+	u8 peer_nmi[ETH_ALEN];
+	bool has_peer = false;
+	bool generate_new = false;
+	bool send_new = false;
+	bool send_revoked = false;
+	int op_ctrl = -1;
+	char *tmp;
+
+	if (!wpa_s->nan)
+		return -1;
+
+	tmp = os_strdup(cmd ? cmd : "");
+	if (!tmp)
+		return -1;
+
+	while ((token = str_token(tmp, " ", &context))) {
+		if (os_strncmp(token, "peer_nmi=", 9) == 0) {
+			if (hwaddr_aton(token + 9, peer_nmi) == 0)
+				has_peer = true;
+		} else if (os_strcmp(token, "generate=1") == 0) {
+			generate_new = true;
+		} else if (os_strcmp(token, "send=1") == 0) {
+			send_new = true;
+		} else if (os_strcmp(token, "send_revoked=1") == 0) {
+			send_revoked = true;
+		} else if (os_strncmp(token, "op_ctrl=", 8) == 0) {
+			op_ctrl = (int) strtoul(token + 8, NULL, 0);
+		}
+	}
+	os_free(tmp);
+
+	return nan_update_pkr(wpa_s->nan, has_peer ? peer_nmi : NULL,
+			      generate_new, op_ctrl, send_new,
+			      send_revoked);
+}
+
+
 int wpas_nan_get_self_pkr(struct wpa_supplicant *wpa_s, char *buf,
 			  size_t buflen)
 {

@@ -59,6 +59,7 @@ int wpas_nan_get_sae_pairing_pmkid(struct wpa_supplicant *wpa_s,
 				   const char *cmd, char *buf, size_t buflen);
 int wpas_nan_get_self_pkr(struct wpa_supplicant *wpa_s, char *buf,
 			  size_t buflen);
+int wpas_nan_update_pkr(struct wpa_supplicant *wpa_s, char *cmd);
 int wpas_nan_pasn_auth_tx_status(struct wpa_supplicant *wpa_s, const u8 *data,
 				 size_t data_len, bool acked);
 int wpas_nan_pasn_auth_rx(struct wpa_supplicant *wpa_s,

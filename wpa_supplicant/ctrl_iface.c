@@ -14999,6 +14999,9 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 		reply_len = wpas_nan_get_self_pkr(wpa_s, reply, reply_size);
 		if (reply_len < 0)
 			reply_len = -1;
+	} else if (os_strncmp(buf, "NAN_UPDATE_PKR ", 15) == 0) {
+		if (wpas_nan_update_pkr(wpa_s, buf + 15) < 0)
+			reply_len = -1;
 	} else if (os_strncmp(buf, "NAN_PAIR ", 9) == 0) {
 		if (wpas_nan_pairing_start(wpa_s, buf + 9) < 0)
 			reply_len = -1;

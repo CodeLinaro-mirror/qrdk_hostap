@@ -1092,5 +1092,7 @@ void nan_rsia_get_rsids(struct nan_data *nan, const u8 *service_id,
 			u8 **rsid_list, u8 *rsid_list_len, bool is_unicast,
 			bool *has_zero_rsid);
 struct dl_list * nan_get_nik_list(struct nan_data *nan, enum nan_nik_type type);
+int nan_update_pkr(struct nan_data *nan, const u8 *peer_nmi, bool generate_new,
+		   int op_ctrl, bool send_new, bool send_revoked);
 
 #endif /* NAN_H */
