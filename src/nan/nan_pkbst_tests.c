@@ -743,6 +743,65 @@ out:
 }
 
 
+static int test_peer_pkr(void)
+{
+	const u8 addr[ETH_ALEN] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
+	struct nan_data nan;
+	struct nan_peer peer;
+	struct nan_pkr pkr;
+	struct wpabuf *buf = NULL;
+	u8 isk[NAN_ISK_LEN];
+	int ret = -1;
+
+	os_memset(&nan, 0, sizeof(nan));
+	os_memset(&peer, 0, sizeof(peer));
+	dl_list_init(&nan.peer_list);
+	dl_list_init(&nan.self_nik_list);
+	dl_list_init(&nan.peer_nik_list);
+	dl_list_init(&nan.group_nik_list);
+	os_memcpy(peer.nmi_addr, addr, ETH_ALEN);
+
+	buf = wpabuf_alloc(512);
+	if (!buf || test_make_pkr(&pkr, isk) < 0 ||
+	    test_pkr_blob(buf, &pkr, isk) < 0 ||
+	    /* An unknown peer address is rejected */
+	    nan_pairing_set_peer_pkr(&nan, addr, wpabuf_head(buf),
+				     wpabuf_len(buf)) == 0 ||
+	    /* Staged, identity key usable before discovery */
+	    nan_pairing_set_peer_pkr(&nan, NULL, wpabuf_head(buf),
+				     wpabuf_len(buf)) < 0 ||
+	    !nan.pending_peer_pkr.valid ||
+	    !test_has_nik(&nan, NAN_NIK_TYPE_PEER, pkr.iik))
+		goto out;
+
+	/* Applied once, to the first peer added */
+	nan_pairing_add_peer(&nan, &peer);
+	if (!peer.peer_pkr.valid || nan.pending_peer_pkr.valid ||
+	    os_memcmp(peer.peer_pkr.ipk, pkr.ipk, NAN_IPK_LEN) != 0)
+		goto out;
+
+	/* Replacement for a known peer retires the old identity key */
+	dl_list_add(&nan.peer_list, &peer.list);
+	os_memset(pkr.iik, 0x55, NAN_IIK_LEN);
+	if (test_pkr_blob(buf, &pkr, isk) < 0 ||
+	    nan_pairing_set_peer_pkr(&nan, addr, wpabuf_head(buf),
+				     wpabuf_len(buf)) < 0 ||
+	    os_memcmp(peer.peer_pkr.iik, pkr.iik, NAN_IIK_LEN) != 0 ||
+	    !test_has_nik(&nan, NAN_NIK_TYPE_PEER, pkr.iik) ||
+	    dl_list_len(&nan.peer_nik_list) != 1)
+		goto out;
+
+	ret = 0;
+out:
+	if (ret)
+		wpa_printf(MSG_ERROR, "FAIL: peer PKR provisioning");
+	forced_memzero(isk, sizeof(isk));
+	nan_flush_niks(&nan);
+	wpabuf_free(buf);
+	return ret;
+}
+
+
 /**
  * nan_pkbst_tests - Run NAN PKBST unit tests
  * Returns: 0 on success, -1 on failure
@@ -751,7 +810,8 @@ int nan_pkbst_tests(void)
 {
 	if (test_pkr_usable() || test_pkr_signature() || test_pkr_encode() ||
 	    test_pkr_parse() || test_pkr_parse_optional() || test_pkra() ||
-	    test_pkbst_password() || test_fkce() || test_self_pkr())
+	    test_pkbst_password() || test_fkce() || test_self_pkr() ||
+	    test_peer_pkr())
 		return -1;
 	return 0;
 }

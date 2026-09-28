@@ -262,6 +262,8 @@ static void nan_del_peer(struct nan_data *nan, struct nan_peer *peer)
 	nan_peer_flush_sec(&peer->info);
 	eloop_cancel_timeout(nan_peer_state_timeout, nan, peer);
 	nan_pairing_deinit_peer(nan, peer, true);
+	if (peer->peer_pkr.valid)
+		nan_remove_nik(nan, peer->peer_pkr.iik, NAN_NIK_TYPE_PEER);
 	os_free(peer);
 }
 
@@ -455,6 +457,7 @@ void nan_flush(struct nan_data *nan)
 	os_memset(&nan->sched, 0, sizeof(nan->sched));
 	os_memset(&nan->self_pkr, 0, sizeof(nan->self_pkr));
 	os_memset(nan->self_isk, 0, sizeof(nan->self_isk));
+	os_memset(&nan->pending_peer_pkr, 0, sizeof(nan->pending_peer_pkr));
 }
 
 
@@ -1602,6 +1605,7 @@ int nan_add_peer(struct nan_data *nan, const u8 *addr,
 			return -1;
 
 		os_memcpy(peer->nmi_addr, addr, ETH_ALEN);
+		nan_pairing_add_peer(nan, peer);
 	}
 
 	/* Per Wi-Fi Aware spec R5, Table 5 (Address field definition for NAN

@@ -2334,6 +2334,77 @@ int nan_pairing_set_self_pkr(struct nan_data *nan, const u8 *blob,
 }
 
 
+/* The IIK of a peer record resolves the peer's Source NAN Tags */
+static void nan_pairing_store_peer_pkr(struct nan_data *nan,
+				       struct nan_pkr *dst,
+				       const struct nan_pkr *pkr)
+{
+	if (dst->valid &&
+	    os_memcmp(dst->iik, pkr->iik, NAN_IIK_LEN) != 0)
+		nan_remove_nik(nan, dst->iik, NAN_NIK_TYPE_PEER);
+	*dst = *pkr;
+	nan_add_nik(nan, dst->iik, NAN_NIK_TYPE_PEER, true);
+}
+
+
+/**
+ * nan_pairing_set_peer_pkr - Provision a peer Public Key Record
+ * @nan: NAN data
+ * @peer_addr: Peer NMI address or %NULL if the peer is not yet known
+ * @blob: Number of PKRs (1) followed by one signed record
+ * @len: Length of @blob
+ * Returns: 0 on success, -1 on failure
+ *
+ * Without a known peer, the record is staged and applied to the next peer
+ * that is added.
+ */
+int nan_pairing_set_peer_pkr(struct nan_data *nan, const u8 *peer_addr,
+			     const u8 *blob, size_t len)
+{
+	struct nan_peer *peer = NULL;
+	struct nan_pkr pkr;
+
+	if (!nan || nan_pairing_parse_pkr_blob(blob, len, &pkr) < 0)
+		return -1;
+
+	if (peer_addr) {
+		peer = nan_get_peer(nan, peer_addr);
+		if (!peer) {
+			wpa_printf(MSG_DEBUG, "NAN: Unknown peer " MACSTR,
+				   MAC2STR(peer_addr));
+			return -1;
+		}
+	}
+
+	nan_pairing_store_peer_pkr(nan,
+				   peer ? &peer->peer_pkr :
+				   &nan->pending_peer_pkr, &pkr);
+	wpa_printf(MSG_DEBUG, "NAN: Peer PKR %s",
+		   peer ? "installed" : "staged for the next peer");
+	return 0;
+}
+
+
+/**
+ * nan_pairing_add_peer - Apply a staged peer Public Key Record
+ * @nan: NAN data
+ * @peer: Newly added peer
+ *
+ * The staged record belongs to a single peer, so it is moved rather than
+ * copied. The identity key registered at staging time stays in place.
+ */
+void nan_pairing_add_peer(struct nan_data *nan, struct nan_peer *peer)
+{
+	if (!nan->pending_peer_pkr.valid || peer->peer_pkr.valid)
+		return;
+
+	peer->peer_pkr = nan->pending_peer_pkr;
+	os_memset(&nan->pending_peer_pkr, 0, sizeof(nan->pending_peer_pkr));
+	wpa_printf(MSG_DEBUG, "NAN: Staged PKR applied to peer " MACSTR,
+		   MAC2STR(peer->nmi_addr));
+}
+
+
 /**
  * nan_pairing_set_self_isk - Set the Individual Secret Key of the local PKR
  * @nan: NAN data

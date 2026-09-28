@@ -644,6 +644,9 @@ struct nan_peer {
 
 	struct nan_pairing_peer_data pairing;
 
+	/* Public Key Record received from or provisioned for this peer */
+	struct nan_pkr peer_pkr;
+
 	u8 igtk_id;
 	u8 bigtk_id;
 };
@@ -673,6 +676,8 @@ struct nan_peer {
  * @group_nik_list: List of group NIKs (NAN Identity Keys)
  * @self_pkr: Local Public Key Record used for PKBST
  * @self_isk: Individual Secret Key for @self_pkr
+ * @pending_peer_pkr: Peer Public Key Record provisioned before the peer is
+ *	known; applied to the next peer that is added
  */
 struct nan_data {
 	struct nan_config *cfg;
@@ -704,6 +709,7 @@ struct nan_data {
 
 	struct nan_pkr self_pkr;
 	u8 self_isk[NAN_ISK_LEN];
+	struct nan_pkr pending_peer_pkr;
 };
 
 struct nan_attrs_entry {
@@ -792,6 +798,7 @@ static inline u8 nan_get_next_ndp_id(struct nan_data *nan)
 
 
 struct nan_peer * nan_get_peer(struct nan_data *nan, const u8 *addr);
+void nan_pairing_add_peer(struct nan_data *nan, struct nan_peer *peer);
 bool nan_is_naf(const struct ieee80211_mgmt *mgmt, size_t len);
 int nan_parse_attrs(struct nan_data *nan, const u8 *data, size_t len,
 		    struct nan_attrs *attrs);
