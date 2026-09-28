@@ -2206,6 +2206,18 @@ int nan_pairing_set_cipher_suites(struct nan_data *nan, u32 value)
 }
 
 
+int nan_pairing_set_extended_pkbst_method(struct nan_data *nan, u8 value)
+{
+	if (value & ~(NAN_PBEA_PKBST_ONE_WAY | NAN_PBEA_PKBST_MUTUAL))
+		return -1;
+
+	wpa_printf(MSG_DEBUG, "NAN: SET: PKBST methods: 0x%x -> 0x%x",
+		   nan->cfg->pairing_cfg.extended_pkbst_method, value);
+	nan->cfg->pairing_cfg.extended_pkbst_method = value;
+	return 0;
+}
+
+
 int nan_pairing_set_nik(struct nan_data *nan, const u8 *nik, size_t nik_len)
 {
 	u8 nonce[NAN_NIRA_NONCE_LEN];

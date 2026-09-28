@@ -1384,6 +1384,28 @@ static void nan_parse_npba(struct nan_data *nan, struct nan_peer *peer,
 }
 
 
+/*
+ * The PKBST method used with a peer is supported by both devices; mutual
+ * PKBST is preferred.
+ */
+static void nan_select_pkbst_mode(struct nan_data *nan,
+				  struct nan_peer *peer)
+{
+	u8 common = nan->cfg->pairing_cfg.extended_pkbst_method &
+		peer->bootstrap.extended_pbm;
+
+	if (common & NAN_PBEA_PKBST_MUTUAL)
+		peer->bootstrap.pkbst_mode = NAN_PKBST_MODE_MUTUAL;
+	else if (common & NAN_PBEA_PKBST_ONE_WAY)
+		peer->bootstrap.pkbst_mode = NAN_PKBST_MODE_ONE_WAY;
+	else
+		peer->bootstrap.pkbst_mode = NAN_PKBST_MODE_NONE;
+
+	wpa_printf(MSG_DEBUG, "NAN: PKBST mode with " MACSTR ": %d",
+		   MAC2STR(peer->nmi_addr), peer->bootstrap.pkbst_mode);
+}
+
+
 void nan_parse_pbea(struct nan_data *nan, struct nan_peer *peer,
 		    struct nan_attrs *attrs)
 {
@@ -1409,6 +1431,7 @@ void nan_parse_pbea(struct nan_data *nan, struct nan_peer *peer,
 		wpa_printf(MSG_DEBUG,
 			   "NAN: PBEA extended bootstrapping methods: 0x%04x",
 			   peer->bootstrap.extended_pbm);
+		nan_select_pkbst_mode(nan, peer);
 	}
 
 	if (control & BIT(1)) {

@@ -456,6 +456,8 @@ struct nan_pairing_cfg {
 	bool npk_caching;
 	bool pairing_verification;
 	u32 cipher_suites;
+	/* Supported PKBST methods, NAN_PBEA_PKBST_* */
+	u8 extended_pkbst_method;
 };
 
 struct nan_config {
@@ -989,6 +991,7 @@ int nan_pairing_set_pairing_setup(struct nan_data *nan_data, bool value);
 int nan_pairing_set_npk_caching(struct nan_data *nan_data, bool value);
 int nan_pairing_set_pairing_verification(struct nan_data *nan_data, bool value);
 int nan_pairing_set_cipher_suites(struct nan_data *nan_data, u32 value);
+int nan_pairing_set_extended_pkbst_method(struct nan_data *nan, u8 value);
 int nan_pairing_set_nik(struct nan_data *nan, const u8 *nik, size_t nik_len);
 int nan_pairing_set_nik_lifetime(struct nan_data *nan, u32 lifetime);
 int nan_pairing_set_self_pkr(struct nan_data *nan, const u8 *blob,

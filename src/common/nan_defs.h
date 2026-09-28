@@ -713,6 +713,12 @@ struct nan_assoc_nik_entry {
 	u8 nik[NAN_NIK_LEN];
 };
 
+/* Wi-Fi Aware spec R5, Table 151 (PBEA format), Extended Pairing Bootstrapping
+ * Method field
+ */
+#define NAN_PBEA_PKBST_ONE_WAY		BIT(0)
+#define NAN_PBEA_PKBST_MUTUAL		BIT(1)
+
 /* Wi-Fi Aware R5 spec, Table 35 (Record Control format) */
 #define NAN_PKR_CONF_VALID_AFTER	BIT(0)
 #define NAN_PKR_CONF_VALID_BEFORE	BIT(1)

@@ -2083,6 +2083,8 @@ int wpas_nan_set(struct wpa_supplicant *wpa_s, char *cmd)
 	NAN_PARSE_PAIRING_BOOL(pairing_verification);
 	NAN_PARSE_PAIRING_INT(cipher_suites,
 			      NAN_PAIRING_PASN_128 | NAN_PAIRING_PASN_256);
+	NAN_PARSE_PAIRING_INT(extended_pkbst_method,
+			      NAN_PBEA_PKBST_ONE_WAY | NAN_PBEA_PKBST_MUTUAL);
 #undef NAN_PARSE_PAIRING_BOOL
 #undef NAN_PARSE_PAIRING_INT
 

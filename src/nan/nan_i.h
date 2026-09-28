@@ -485,6 +485,18 @@ struct nan_ndl {
 };
 
 /**
+ * enum nan_pkbst_mode - PKBST method negotiated with a peer
+ * @NAN_PKBST_MODE_NONE: PKBST not used
+ * @NAN_PKBST_MODE_ONE_WAY: One-way PKBST
+ * @NAN_PKBST_MODE_MUTUAL: Mutual PKBST
+ */
+enum nan_pkbst_mode {
+	NAN_PKBST_MODE_NONE,
+	NAN_PKBST_MODE_ONE_WAY,
+	NAN_PKBST_MODE_MUTUAL,
+};
+
+/**
  * struct nan_bootstrap - NAN bootstrap information
  * @supported_methods: Bitmap of supported bootstrap methods. See
  *     &enum nan_pairing_bootstrapping_method.
@@ -504,6 +516,8 @@ struct nan_ndl {
  * @handle: Follow-up context handle for the ongoing bootstrap request
  * @req_instance_id: Instance ID of the bootstrap request
  * @npba: The NPBA from the last successful bootstrap
+ * @pkbst_mode: PKBST method negotiated with the peer. Not cleared on
+ *	bootstrap reset since pairing uses it after bootstrapping completes.
  */
 struct nan_bootstrap {
 	u16 supported_methods;
@@ -529,6 +543,8 @@ struct nan_bootstrap {
 	u16 extended_pbm;
 	u8 *pairing_setup_info;
 	u16 pairing_setup_info_len;
+
+	enum nan_pkbst_mode pkbst_mode;
 };
 
 /**
