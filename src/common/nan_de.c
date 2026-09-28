@@ -1029,14 +1029,18 @@ static void nan_de_tx_sdf(struct nan_de *de, struct nan_de_service *srv,
 	    !ether_addr_equal(dst, p2p_network_id))
 		unicast_frame = true;
 
-	if (has_randomization) {
+	/* IRSA is included for service ID randomization and whenever NAN
+	 * Tags are available, e.g., for PKBST discovery.
+	 */
+	if (has_randomization || de->cb.irsa_get_nonce_tag_tlv) {
 		for (retry = 0; retry < NAN_RSID_MAX_RETRIES; retry++) {
 			os_free(irsa_tag_tlv);
 			irsa_tag_tlv = NULL;
 			irsa_tag_tlv_len = 0;
 			has_zero_rsid = false;
 
-			if (unicast_frame && de->matched_nik_set) {
+			if (unicast_frame && de->matched_nik_set &&
+			    has_randomization) {
 				if (os_get_random(irsa_nonce,
 						  NAN_NIRA_NONCE_LEN) < 0) {
 					wpa_printf(MSG_DEBUG,
@@ -1046,6 +1050,13 @@ static void nan_de_tx_sdf(struct nan_de *de, struct nan_de_service *srv,
 				}
 				irsa_tag_tlv = nan_de_build_unicast_irsa_tlv(
 					de, irsa_nonce, &irsa_tag_tlv_len);
+
+				/* A PKBST peer has no associated legacy NIK. */
+				if (!irsa_tag_tlv_len)
+					nan_de_generate_irsa_and_calc_len(
+						de, irsa_nonce, &irsa_tag_tlv,
+						&irsa_tag_tlv_len,
+						srv->type == NAN_DE_PUBLISH);
 			} else {
 				nan_de_generate_irsa_and_calc_len(
 					de, irsa_nonce,
@@ -1090,9 +1101,7 @@ static void nan_de_tx_sdf(struct nan_de *de, struct nan_de_service *srv,
 			     irsa_tag_tlv, irsa_tag_tlv_len, unicast_frame,
 			     NULL);
 
-	if (has_randomization)
-		nan_de_irsa_attr_add(buf, irsa_nonce, irsa_tag_tlv,
-				     irsa_tag_tlv_len);
+	nan_de_irsa_attr_add(buf, irsa_nonce, irsa_tag_tlv, irsa_tag_tlv_len);
 	os_free(irsa_tag_tlv);
 
 	/* Use per-service source address if configured, otherwise use NMI */
