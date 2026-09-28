@@ -2111,6 +2111,65 @@ int wpas_nan_set(struct wpa_supplicant *wpa_s, char *cmd)
 
 		return nan_pairing_set_nik_lifetime(wpa_s->nan, lifetime);
 	}
+
+	if (os_strcmp("self_pkr", cmd) == 0) {
+		struct wpabuf *blob = wpabuf_parse_bin(param);
+		int res;
+
+		if (!blob)
+			return -1;
+		res = nan_pairing_set_self_pkr(wpa_s->nan, wpabuf_head(blob),
+					       wpabuf_len(blob));
+		wpabuf_free(blob);
+		return res;
+	}
+
+	if (os_strcmp("self_isk", cmd) == 0) {
+		struct wpabuf *isk = wpabuf_parse_bin(param);
+		int res;
+
+		if (!isk)
+			return -1;
+		res = nan_pairing_set_self_isk(wpa_s->nan, wpabuf_head(isk),
+					       wpabuf_len(isk));
+		wpabuf_clear_free(isk);
+		return res;
+	}
+
+	if (os_strcmp("peer_pkr", cmd) == 0) {
+		struct wpabuf *blob;
+		u8 addr[ETH_ALEN];
+		const u8 *peer = NULL;
+		int res;
+
+		/* [<peer NMI> ]<PKR blob> */
+		if (hwaddr_aton(param, addr) == 0 && param[17] == ' ') {
+			peer = addr;
+			param += 18;
+		}
+		blob = wpabuf_parse_bin(param);
+		if (!blob)
+			return -1;
+		res = nan_pairing_set_peer_pkr(wpa_s->nan, peer,
+					       wpabuf_head(blob),
+					       wpabuf_len(blob));
+		wpabuf_free(blob);
+		return res;
+	}
+
+	if (os_strcmp("generate_self_pkr", cmd) == 0) {
+		int res;
+
+		if (atoi(param) != 1)
+			return -1;
+		res = nan_pairing_generate_self_pkr(wpa_s->nan);
+		if (res < 0)
+			return res;
+		/* Provision the initial PKR for one-time PKBST use. */
+		nan_pairing_set_pkr_op_ctrl(wpa_s->nan,
+					    NAN_PKR_OP_CTRL_ONE_TIME_USE);
+		return 0;
+	}
 #endif /* CONFIG_PASN */
 
 	if (os_strcmp("mgmt_group_cipher", cmd) == 0) {
@@ -4485,6 +4544,26 @@ int wpas_nan_get_sae_pairing_pmkid(struct wpa_supplicant *wpa_s,
 }
 
 #endif /* CONFIG_TESTING_OPTIONS */
+
+
+int wpas_nan_get_self_pkr(struct wpa_supplicant *wpa_s, char *buf,
+			  size_t buflen)
+{
+	struct wpabuf *blob;
+	int ret;
+
+	if (!wpa_s->nan)
+		return -1;
+
+	blob = nan_pairing_get_self_pkr(wpa_s->nan);
+	if (!blob)
+		return -1;
+
+	ret = wpa_snprintf_hex(buf, buflen, wpabuf_head(blob),
+			       wpabuf_len(blob));
+	wpabuf_free(blob);
+	return ret;
+}
 
 
 int wpas_nan_pasn_auth_rx(struct wpa_supplicant *wpa_s,

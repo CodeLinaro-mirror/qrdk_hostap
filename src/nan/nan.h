@@ -998,6 +998,8 @@ int nan_pairing_set_self_isk(struct nan_data *nan, const u8 *isk,
 int nan_pairing_set_peer_pkr(struct nan_data *nan, const u8 *peer_addr,
 			     const u8 *blob, size_t len);
 int nan_pairing_generate_self_pkr(struct nan_data *nan);
+void nan_pairing_set_pkr_op_ctrl(struct nan_data *nan, u16 op_ctrl);
+struct wpabuf * nan_pairing_get_self_pkr(struct nan_data *nan);
 bool nan_pairing_is_peer_paired(struct nan_data *nan_data, const u8 *peer_addr);
 int nan_pairing_abort(struct nan_data *nan_data, const u8 *peer_addr);
 void nan_pairing_unpair_peer(struct nan_data *nan_data, const u8 *peer_addr);

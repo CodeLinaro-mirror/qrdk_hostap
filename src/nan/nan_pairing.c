@@ -2424,6 +2424,56 @@ out:
 }
 
 
+/**
+ * nan_pairing_set_pkr_op_ctrl - Set Operation Control on the self PKR
+ * @nan: NAN data
+ * @op_ctrl: Operation Control value (NAN_PKR_CTRL_* bits)
+ */
+void nan_pairing_set_pkr_op_ctrl(struct nan_data *nan, u16 op_ctrl)
+{
+	if (!nan || !nan_pairing_is_pkr_usable(&nan->self_pkr))
+		return;
+
+	nan->self_pkr.op_ctrl = op_ctrl;
+	nan->self_pkr.valid_duration =
+		(op_ctrl & NAN_PKR_OP_CTRL_ONE_TIME_USE) ?
+		5 : NAN_PKR_DEFAULT_VALID_DURATION;
+}
+
+
+/**
+ * nan_pairing_get_self_pkr - Export the local Public Key Record
+ * @nan: NAN data
+ * Returns: Number of PKRs (1) followed by the signed record, or %NULL
+ *
+ * The export is what a peer is provisioned with. It is signed with the ISK
+ * but never contains it, and it is only available when the ISK matching the
+ * record is configured. The caller is responsible for freeing the returned
+ * buffer.
+ */
+struct wpabuf * nan_pairing_get_self_pkr(struct nan_data *nan)
+{
+	static const u8 zero_isk[NAN_ISK_LEN];
+	const struct nan_pkr *pkrs[1];
+	const u8 *isks[1];
+	struct wpabuf *buf;
+
+	if (!nan || !nan_pairing_is_pkr_usable(&nan->self_pkr) ||
+	    os_memcmp(nan->self_isk, zero_isk, NAN_ISK_LEN) == 0)
+		return NULL;
+
+	buf = wpabuf_alloc(1 + 2 + NAN_ELEMENT_MAX_SIZE);
+	pkrs[0] = &nan->self_pkr;
+	isks[0] = nan->self_isk;
+	if (!buf || nan_pkra_encode(buf, pkrs, isks, 1) < 0) {
+		wpabuf_free(buf);
+		return NULL;
+	}
+
+	return buf;
+}
+
+
 /* The IIK of a peer record resolves the peer's Source NAN Tags */
 static void nan_pairing_store_peer_pkr(struct nan_data *nan,
 				       struct nan_pkr *dst,
