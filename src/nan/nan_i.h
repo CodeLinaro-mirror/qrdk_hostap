@@ -891,6 +891,16 @@ struct wpabuf * nan_crypto_sign_pkr(const u8 *isk, const u8 *data,
 int nan_crypto_derive_pkbst_password(const u8 *ipk_pub, const u8 *ipk_sub,
 				     const u8 *initiator_nmi,
 				     const u8 *responder_nmi, u8 *password);
+struct sae_data;
+struct wpabuf * nan_crypto_build_fkce_input(const struct sae_data *sae,
+					    const u8 *ipk,
+					    const u8 *initiator_nmi,
+					    const u8 *responder_nmi,
+					    bool responder);
+struct wpabuf * nan_crypto_compute_fkce(const u8 *isk,
+					const struct wpabuf *input);
+int nan_crypto_verify_fkce(const u8 *ipk, const struct wpabuf *input,
+			   const u8 *key_auth, size_t key_auth_len);
 int nan_crypto_derive_npk(const u8 *kdk, size_t kdk_len,
 			  enum nan_cipher_suite_id cipher,
 			  const u8 *initiator_nmi, const u8 *responder_nmi,

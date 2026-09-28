@@ -13,6 +13,7 @@
 #include "crypto/sha384.h"
 #include "crypto/crypto.h"
 #include "crypto/aes_wrap.h"
+#include "common/sae.h"
 #include "nan_i.h"
 
 #define NAN_KCK_MAX_LEN 24
@@ -1107,4 +1108,105 @@ int nan_crypto_derive_pkbst_password(const u8 *ipk_pub, const u8 *ipk_sub,
 			      password, NAN_PKBST_PASSWORD_LEN);
 	forced_memzero(prk, sizeof(prk));
 	return ret;
+}
+
+
+/**
+ * nan_crypto_build_fkce_input - Build the PKBST identity signature input
+ * @sae: SAE data after both commits have been processed
+ * @ipk: IPK of the signer
+ * @initiator_nmi: Pairing Initiator NMI
+ * @responder_nmi: Pairing Responder NMI
+ * @responder: Whether the local device is the Pairing Responder
+ * Returns: Allocated buffer or %NULL on failure
+ *
+ * Wi-Fi Aware spec R5 draft v0.0.16, Table 36: eleResp || eleInit || scaResp ||
+ * scaInit || IPK || Responder NMI || Initiator NMI. Both sides build the same
+ * input for a given signer.
+ */
+struct wpabuf * nan_crypto_build_fkce_input(const struct sae_data *sae,
+					    const u8 *ipk,
+					    const u8 *initiator_nmi,
+					    const u8 *responder_nmi,
+					    bool responder)
+{
+	const struct sae_temporary_data *tmp = sae ? sae->tmp : NULL;
+	const struct crypto_ec_point *ele_resp, *ele_init;
+	const struct crypto_bignum *sca_resp, *sca_init;
+	struct wpabuf *buf;
+	size_t plen;
+	u8 *pos;
+
+	if (!tmp || !tmp->ec || !ipk || !initiator_nmi || !responder_nmi)
+		return NULL;
+
+	plen = tmp->prime_len;
+	ele_resp = responder ? tmp->own_commit_element_ecc :
+		tmp->peer_commit_element_ecc;
+	ele_init = responder ? tmp->peer_commit_element_ecc :
+		tmp->own_commit_element_ecc;
+	sca_resp = responder ? tmp->own_commit_scalar :
+		sae->peer_commit_scalar;
+	sca_init = responder ? sae->peer_commit_scalar :
+		tmp->own_commit_scalar;
+
+	buf = wpabuf_alloc(6 * plen + NAN_IPK_LEN + 2 * ETH_ALEN);
+	if (!buf)
+		return NULL;
+
+	pos = wpabuf_put(buf, 2 * plen);
+	if (crypto_ec_point_to_bin(tmp->ec, ele_resp, pos, pos + plen) < 0)
+		goto fail;
+	pos = wpabuf_put(buf, 2 * plen);
+	if (crypto_ec_point_to_bin(tmp->ec, ele_init, pos, pos + plen) < 0 ||
+	    crypto_bignum_to_bin(sca_resp, wpabuf_put(buf, plen), plen,
+				 plen) < 0 ||
+	    crypto_bignum_to_bin(sca_init, wpabuf_put(buf, plen), plen,
+				 plen) < 0)
+		goto fail;
+	wpabuf_put_data(buf, ipk, NAN_IPK_LEN);
+	wpabuf_put_data(buf, responder_nmi, ETH_ALEN);
+	wpabuf_put_data(buf, initiator_nmi, ETH_ALEN);
+	return buf;
+
+fail:
+	wpabuf_free(buf);
+	return NULL;
+}
+
+
+/**
+ * nan_crypto_compute_fkce - Compute the PKBST FKCE KeyAuth
+ * @isk: Individual Secret Key of the signer
+ * @input: Output of nan_crypto_build_fkce_input()
+ * Returns: DER-encoded ECDSA signature or %NULL on failure
+ */
+struct wpabuf * nan_crypto_compute_fkce(const u8 *isk,
+					const struct wpabuf *input)
+{
+	if (!input)
+		return NULL;
+	return nan_crypto_sign_pkr(isk, wpabuf_head(input), wpabuf_len(input));
+}
+
+
+/**
+ * nan_crypto_verify_fkce - Verify a received PKBST FKCE KeyAuth
+ * @ipk: IPK of the signer
+ * @input: Output of nan_crypto_build_fkce_input()
+ * @key_auth: Received KeyAuth field
+ * @key_auth_len: Length of @key_auth
+ * Returns: 0 if the signature is valid, -1 otherwise
+ */
+int nan_crypto_verify_fkce(const u8 *ipk, const struct wpabuf *input,
+			   const u8 *key_auth, size_t key_auth_len)
+{
+	if (!input || !key_auth || key_auth_len == 0) {
+		wpa_printf(MSG_DEBUG, "NAN: Invalid FKCE KeyAuth");
+		return -1;
+	}
+
+	return nan_crypto_verify_pkr_signature(ipk, wpabuf_head(input),
+					       wpabuf_len(input),
+					       key_auth, key_auth_len);
 }

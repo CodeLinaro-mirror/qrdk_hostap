@@ -8,6 +8,7 @@
 
 #include "utils/includes.h"
 #include "utils/common.h"
+#include "common/sae.h"
 #include "crypto/crypto.h"
 #include "crypto/sha256.h"
 #include "nan_i.h"
@@ -544,6 +545,108 @@ static int test_pkbst_password(void)
 }
 
 
+/* Run the SAE commit exchange so that both sides share the transcript */
+static int test_sae_commit(struct sae_data *init, struct sae_data *resp,
+			   const u8 *init_addr, const u8 *resp_addr,
+			   const u8 *pw)
+{
+	struct wpabuf *ci, *cr;
+	int ret = -1;
+
+	ci = wpabuf_alloc(200);
+	cr = wpabuf_alloc(200);
+	if (!ci || !cr ||
+	    sae_set_group(init, 19) < 0 || sae_set_group(resp, 19) < 0 ||
+	    sae_prepare_commit(init_addr, resp_addr, pw,
+			       NAN_PKBST_PASSWORD_LEN, init) < 0 ||
+	    sae_prepare_commit(resp_addr, init_addr, pw,
+			       NAN_PKBST_PASSWORD_LEN, resp) < 0 ||
+	    sae_write_commit(init, ci, NULL, NULL, 0) < 0 ||
+	    sae_write_commit(resp, cr, NULL, NULL, 0) < 0 ||
+	    sae_parse_commit(resp, wpabuf_head(ci), wpabuf_len(ci), NULL, NULL,
+			     NULL, 0, NULL) != WLAN_STATUS_SUCCESS ||
+	    sae_parse_commit(init, wpabuf_head(cr), wpabuf_len(cr), NULL, NULL,
+			     NULL, 0, NULL) != WLAN_STATUS_SUCCESS ||
+	    sae_process_commit(init) < 0 || sae_process_commit(resp) < 0)
+		goto out;
+	ret = 0;
+out:
+	wpabuf_free(ci);
+	wpabuf_free(cr);
+	return ret;
+}
+
+
+static int test_fkce(void)
+{
+	const u8 init_nmi[ETH_ALEN] = { 0x02, 0x10, 0x20, 0x30, 0x40, 0x50 };
+	const u8 resp_nmi[ETH_ALEN] = { 0x02, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0 };
+	struct sae_data init, resp;
+	struct nan_pkr pkr_pub, pkr_sub;
+	struct wpabuf *in_resp = NULL, *in_init = NULL, *key_auth = NULL;
+	u8 isk_pub[NAN_ISK_LEN], isk_sub[NAN_ISK_LEN];
+	u8 pw[NAN_PKBST_PASSWORD_LEN], *ka;
+	size_t ka_len;
+	int ret = -1;
+
+	os_memset(&init, 0, sizeof(init));
+	os_memset(&resp, 0, sizeof(resp));
+	if (test_make_pkr(&pkr_pub, isk_pub) < 0 ||
+	    test_make_pkr(&pkr_sub, isk_sub) < 0 ||
+	    nan_crypto_derive_pkbst_password(pkr_pub.ipk, pkr_sub.ipk,
+					     init_nmi, resp_nmi, pw) < 0 ||
+	    test_sae_commit(&init, &resp, init_nmi, resp_nmi, pw) < 0)
+		goto out;
+
+	/* Responder signs with its ISK; initiator verifies with its view */
+	in_resp = nan_crypto_build_fkce_input(&resp, pkr_pub.ipk, init_nmi,
+					      resp_nmi, true);
+	in_init = nan_crypto_build_fkce_input(&init, pkr_pub.ipk, init_nmi,
+					      resp_nmi, false);
+	if (!in_resp || !in_init || wpabuf_cmp(in_resp, in_init) != 0)
+		goto out;
+	key_auth = nan_crypto_compute_fkce(isk_pub, in_resp);
+	if (!key_auth)
+		goto out;
+	ka = wpabuf_mhead_u8(key_auth);
+	ka_len = wpabuf_len(key_auth);
+	if (nan_crypto_verify_fkce(pkr_pub.ipk, in_init, ka, ka_len) < 0 ||
+	    /* Wrong signer */
+	    nan_crypto_verify_fkce(pkr_sub.ipk, in_init, ka, ka_len) == 0)
+		goto out;
+
+	/* Tampered transcript and signature */
+	wpabuf_mhead_u8(in_init)[0] ^= 0x01;
+	if (nan_crypto_verify_fkce(pkr_pub.ipk, in_init, ka, ka_len) == 0)
+		goto out;
+	wpabuf_mhead_u8(in_init)[0] ^= 0x01;
+	ka[ka_len - 1] ^= 0x01;
+	if (nan_crypto_verify_fkce(pkr_pub.ipk, in_init, ka, ka_len) == 0)
+		goto out;
+
+	/* Role mismatch changes the input */
+	wpabuf_free(in_init);
+	in_init = nan_crypto_build_fkce_input(&init, pkr_pub.ipk, init_nmi,
+					      resp_nmi, true);
+	if (!in_init || wpabuf_cmp(in_resp, in_init) == 0)
+		goto out;
+
+	ret = 0;
+out:
+	if (ret)
+		wpa_printf(MSG_ERROR, "FAIL: PKBST FKCE");
+	forced_memzero(isk_pub, sizeof(isk_pub));
+	forced_memzero(isk_sub, sizeof(isk_sub));
+	forced_memzero(pw, sizeof(pw));
+	wpabuf_free(key_auth);
+	wpabuf_free(in_resp);
+	wpabuf_free(in_init);
+	sae_clear_data(&init);
+	sae_clear_data(&resp);
+	return ret;
+}
+
+
 /**
  * nan_pkbst_tests - Run NAN PKBST unit tests
  * Returns: 0 on success, -1 on failure
@@ -552,7 +655,7 @@ int nan_pkbst_tests(void)
 {
 	if (test_pkr_usable() || test_pkr_signature() || test_pkr_encode() ||
 	    test_pkr_parse() || test_pkr_parse_optional() || test_pkra() ||
-	    test_pkbst_password())
+	    test_pkbst_password() || test_fkce())
 		return -1;
 	return 0;
 }
