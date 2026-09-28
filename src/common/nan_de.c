@@ -896,7 +896,8 @@ static size_t nan_de_sdf_attrs_put(struct wpabuf *buf, struct nan_de *de,
 static size_t nan_de_generate_irsa_and_calc_len(struct nan_de *de,
 						u8 *irsa_nonce,
 						u8 **irsa_tag_tlv,
-						u16 *irsa_tag_tlv_len)
+						u16 *irsa_tag_tlv_len,
+						bool is_publisher)
 {
 	if (!de->cb.irsa_get_nonce_tag_tlv)
 		return 0;
@@ -904,7 +905,8 @@ static size_t nan_de_generate_irsa_and_calc_len(struct nan_de *de,
 	*irsa_tag_tlv = NULL;
 	*irsa_tag_tlv_len = 0;
 	if (de->cb.irsa_get_nonce_tag_tlv(de->cb.ctx, irsa_nonce,
-					  irsa_tag_tlv, irsa_tag_tlv_len) < 0)
+					  irsa_tag_tlv, irsa_tag_tlv_len,
+					  is_publisher) < 0)
 		return 0;
 
 	return NAN_ATTR_HDR_LEN + 1 + NAN_NIRA_NONCE_LEN + *irsa_tag_tlv_len;
@@ -1042,7 +1044,8 @@ static void nan_de_tx_sdf(struct nan_de *de, struct nan_de_service *srv,
 			} else {
 				nan_de_generate_irsa_and_calc_len(
 					de, irsa_nonce,
-					&irsa_tag_tlv, &irsa_tag_tlv_len);
+					&irsa_tag_tlv, &irsa_tag_tlv_len,
+					srv->type == NAN_DE_PUBLISH);
 			}
 
 			/* Probe RSIDs before constructing the frame. */
@@ -3809,9 +3812,14 @@ static void nan_de_tx_merged_sdf(struct nan_de *de, unsigned int freq,
 			irsa_tag_tlv_len = 0;
 			has_zero_rsid = false;
 
+			/* A merged SDF carries one IRSA; select tags by the
+			 * role of the first service.
+			 */
 			nan_de_generate_irsa_and_calc_len(de, irsa_nonce,
 							  &irsa_tag_tlv,
-							  &irsa_tag_tlv_len);
+							  &irsa_tag_tlv_len,
+							  services[0]->type ==
+							  NAN_DE_PUBLISH);
 
 			/* Probe all services for all-zero RSIDs */
 			for (i = 0; i < service_count; i++) {

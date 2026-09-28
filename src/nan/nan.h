@@ -1060,7 +1060,8 @@ void nan_flush_niks(struct nan_data *nan);
 int nan_add_assoc_self_nik(struct nan_data *nan, enum nan_nik_type type,
 			   const u8 *nik, const u8 *self_nik);
 int nan_irsa_get_nonce_tag_tlv(struct nan_data *nan, u8 *irsa_nonce,
-			       u8 **irsa_tag_tlv, u16 *irsa_tag_tlv_len);
+			       u8 **irsa_tag_tlv, u16 *irsa_tag_tlv_len,
+			       bool is_publisher);
 void nan_rsia_get_rsids(struct nan_data *nan, const u8 *service_id,
 			const u8 *irsa_tag_tlv,
 			u16 irsa_tag_tlv_len, u8 *rsid_num,

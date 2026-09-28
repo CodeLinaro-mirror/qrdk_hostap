@@ -4203,53 +4203,72 @@ static void nan_write_nik_list(struct nan_data *nan,
 }
 
 
-int nan_irsa_get_nonce_tag_tlv(struct nan_data *nan, u8 *irsa_nonce,
-			       u8 **irsa_tag_tlv, u16 *irsa_tag_tlv_len)
+/* One Tag TLV per identity key list, for all possessed keys in each */
+static size_t nan_irsa_nik_tags(struct nan_data *nan, const u8 *irsa_nonce,
+				u8 **pos)
 {
-	size_t total_len, written;
+	size_t len;
+
+	len = nan_count_nik_list(&nan->self_nik_list) +
+		nan_count_nik_list(&nan->peer_nik_list) +
+		nan_count_nik_list(&nan->group_nik_list);
+	if (!pos || !len || len > 65535)
+		return len;
+
+	if (nan_count_nik_list(&nan->self_nik_list))
+		nan_write_nik_list(nan, &nan->self_nik_list,
+				   NAN_TAG_TYPE_SN, irsa_nonce, pos);
+	if (nan_count_nik_list(&nan->peer_nik_list))
+		nan_write_nik_list(nan, &nan->peer_nik_list,
+				   NAN_TAG_TYPE_DN, irsa_nonce, pos);
+	if (nan_count_nik_list(&nan->group_nik_list))
+		nan_write_nik_list(nan, &nan->group_nik_list,
+				   NAN_TAG_TYPE_GN, irsa_nonce, pos);
+	return len;
+}
+
+
+/**
+ * nan_irsa_get_nonce_tag_tlv - Generate the IRSA nonce and Tag TLVs
+ * @nan: NAN data
+ * @irsa_nonce: Buffer for the generated nonce
+ * @irsa_tag_tlv: Returns the allocated Tag TLVs, or %NULL if there are none
+ * @irsa_tag_tlv_len: Returns the length of @irsa_tag_tlv
+ * @is_publisher: Whether the tags are for a publish SDF
+ * Returns: 0 on success, -1 on failure
+ */
+int nan_irsa_get_nonce_tag_tlv(struct nan_data *nan, u8 *irsa_nonce,
+			       u8 **irsa_tag_tlv, u16 *irsa_tag_tlv_len,
+			       bool is_publisher)
+{
+	size_t total_len;
 	u8 *pos;
 
 	if (!nan)
 		return -1;
 
+	*irsa_tag_tlv = NULL;
+	*irsa_tag_tlv_len = 0;
 	if (os_get_random(irsa_nonce, NAN_NIRA_NONCE_LEN) < 0)
 		return -1;
 
-	total_len = nan_count_nik_list(&nan->self_nik_list) +
-		nan_count_nik_list(&nan->peer_nik_list) +
-		nan_count_nik_list(&nan->group_nik_list);
-
-	if (total_len == 0 || total_len > 65535) {
-		*irsa_tag_tlv = NULL;
-		*irsa_tag_tlv_len = 0;
+	total_len = nan_irsa_nik_tags(nan, irsa_nonce, NULL);
+	if (total_len == 0 || total_len > 65535)
 		return 0;
-	}
 
 	*irsa_tag_tlv = os_malloc(total_len);
 	if (!*irsa_tag_tlv)
 		return -1;
 
 	pos = *irsa_tag_tlv;
-	if (nan_count_nik_list(&nan->self_nik_list))
-		nan_write_nik_list(nan, &nan->self_nik_list,
-				   NAN_TAG_TYPE_SN, irsa_nonce, &pos);
-	if (nan_count_nik_list(&nan->peer_nik_list))
-		nan_write_nik_list(nan, &nan->peer_nik_list,
-				   NAN_TAG_TYPE_DN, irsa_nonce, &pos);
-	if (nan_count_nik_list(&nan->group_nik_list))
-		nan_write_nik_list(nan, &nan->group_nik_list,
-				   NAN_TAG_TYPE_GN, irsa_nonce, &pos);
-
-	*irsa_tag_tlv_len = (u16) total_len;
-
-	written = (size_t) (pos - *irsa_tag_tlv);
-	if (written != total_len) {
+	nan_irsa_nik_tags(nan, irsa_nonce, &pos);
+	if ((size_t) (pos - *irsa_tag_tlv) != total_len) {
 		os_free(*irsa_tag_tlv);
 		*irsa_tag_tlv = NULL;
-		*irsa_tag_tlv_len = 0;
 		return -1;
 	}
 
+	*irsa_tag_tlv_len = total_len;
 	return 0;
 }
 

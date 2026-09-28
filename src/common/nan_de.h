@@ -87,7 +87,8 @@ struct nan_callbacks {
 	struct dl_list * (*get_nik_list)(void *ctx, u8 tag_type);
 
 	int (*irsa_get_nonce_tag_tlv)(void *ctx, u8 *irsa_nonce,
-				      u8 **irsa_tag_tlv, u16 *irsa_tag_tlv_len);
+				      u8 **irsa_tag_tlv, u16 *irsa_tag_tlv_len,
+				      bool is_publisher);
 
 	void (*process_p2p_usd_elems)(void *ctx, const u8 *buf,
 				      u16 buf_len, const u8 *peer_addr,

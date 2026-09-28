@@ -4085,7 +4085,7 @@ static void wpas_nan_de_add_extra_attrs(void *ctx, struct wpabuf *buf)
 
 static int wpas_irsa_get_nonce_tag_tlv(void *ctx, u8 *irsa_nonce,
 				       u8 **irsa_tag_tlv,
-				       u16 *irsa_tag_tlv_len)
+				       u16 *irsa_tag_tlv_len, bool is_publisher)
 {
 	struct wpa_supplicant *wpa_s = ctx;
 
@@ -4093,7 +4093,7 @@ static int wpas_irsa_get_nonce_tag_tlv(void *ctx, u8 *irsa_nonce,
 		return -1;
 
 	return nan_irsa_get_nonce_tag_tlv(wpa_s->nan, irsa_nonce, irsa_tag_tlv,
-					  irsa_tag_tlv_len);
+					  irsa_tag_tlv_len, is_publisher);
 }
 
 
