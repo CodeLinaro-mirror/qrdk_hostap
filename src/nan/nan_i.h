@@ -730,6 +730,8 @@ struct nan_peer {
  * @self_isk: Individual Secret Key for @self_pkr
  * @pending_peer_pkr: Peer Public Key Record provisioned before the peer is
  *	known; applied to the next peer that is added
+ * @pik_cache: Pairwise Identity Keys of paired peers. Owned by the
+ *	nan_set_pik_cache() caller so that it survives NAN restarts.
  */
 struct nan_data {
 	struct nan_config *cfg;
@@ -763,6 +765,7 @@ struct nan_data {
 	struct nan_pkr self_pkr;
 	u8 self_isk[NAN_ISK_LEN];
 	struct nan_pkr pending_peer_pkr;
+	struct nan_pik_cache *pik_cache;
 };
 
 struct nan_attrs_entry {

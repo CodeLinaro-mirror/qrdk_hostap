@@ -521,6 +521,9 @@ void nan_add_dev_capa_ext_attr(struct nan_data *nan, struct wpabuf *buf)
 	if (nan->cfg->pairing_cfg.npk_caching)
 		pairing_and_npk_caching |=
 			NAN_DEV_CAPA_EXT_INFO_1_NPK_NIK_CACHING;
+	if (nan->cfg->pairing_cfg.pik_caching)
+		pairing_and_npk_caching |=
+			NAN_DEV_CAPA_EXT_INFO_1_PIK_CACHING;
 
 	if (!nan->cfg->dev_capa_ext_reg_info &&
 	    !pairing_and_npk_caching)
@@ -2234,4 +2237,16 @@ int nan_pik_cache_add(struct nan_pik_cache *cache, const u8 *nmi_addr,
 	entry->akmp = akmp;
 	wpa_printf(MSG_DEBUG, "NAN: PIK cached for " MACSTR, MAC2STR(nmi_addr));
 	return 0;
+}
+
+
+/**
+ * nan_set_pik_cache - Set the Pairwise Identity Key cache to use
+ * @nan: NAN data
+ * @cache: Cache owned by the caller, or %NULL to detach it
+ */
+void nan_set_pik_cache(struct nan_data *nan, struct nan_pik_cache *cache)
+{
+	if (nan)
+		nan->pik_cache = cache;
 }

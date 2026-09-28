@@ -17,6 +17,7 @@ int wpas_nan_init(struct wpa_supplicant *wpa_s);
 void wpas_nan_deinit(struct wpa_supplicant *wpa_s);
 int wpas_nan_start(struct wpa_supplicant *wpa_s);
 int wpas_nan_set(struct wpa_supplicant *wpa_s, char *cmd);
+void wpas_nan_deinit_pik_cache(struct wpa_supplicant *wpa_s);
 int wpas_nan_update_conf(struct wpa_supplicant *wpa_s);
 int wpas_nan_stop(struct wpa_supplicant *wpa_s);
 void wpas_nan_flush(struct wpa_supplicant *wpa_s);
@@ -72,6 +73,9 @@ static inline int wpas_nan_init(struct wpa_supplicant *wpa_s)
 }
 
 static inline void wpas_nan_deinit(struct wpa_supplicant *wpa_s)
+{}
+
+static inline void wpas_nan_deinit_pik_cache(struct wpa_supplicant *wpa_s)
 {}
 
 static inline int wpas_nan_start(struct wpa_supplicant *wpa_s)

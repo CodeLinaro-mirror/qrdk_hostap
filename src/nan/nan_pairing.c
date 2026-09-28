@@ -2408,6 +2408,15 @@ int nan_pairing_set_cipher_suites(struct nan_data *nan, u32 value)
 }
 
 
+int nan_pairing_set_pik_caching(struct nan_data *nan, bool value)
+{
+	wpa_printf(MSG_DEBUG, "NAN: SET: PIK caching: %d -> %d",
+		   nan->cfg->pairing_cfg.pik_caching, value);
+	nan->cfg->pairing_cfg.pik_caching = value;
+	return 0;
+}
+
+
 int nan_pairing_set_extended_pkbst_method(struct nan_data *nan, u8 value)
 {
 	if (value & ~(NAN_PBEA_PKBST_ONE_WAY | NAN_PBEA_PKBST_MUTUAL))

@@ -459,6 +459,7 @@ struct nan_pairing_cfg {
 	u32 cipher_suites;
 	/* Supported PKBST methods, NAN_PBEA_PKBST_* */
 	u8 extended_pkbst_method;
+	bool pik_caching;
 };
 
 struct nan_config {
@@ -1017,6 +1018,8 @@ struct wpabuf * nan_pairing_get_self_pkr(struct nan_data *nan);
 
 struct nan_pik_cache * nan_pik_cache_init(unsigned int max_entries);
 void nan_pik_cache_deinit(struct nan_pik_cache *cache);
+void nan_set_pik_cache(struct nan_data *nan, struct nan_pik_cache *cache);
+int nan_pairing_set_pik_caching(struct nan_data *nan, bool value);
 bool nan_pairing_is_peer_paired(struct nan_data *nan_data, const u8 *peer_addr);
 int nan_pairing_abort(struct nan_data *nan_data, const u8 *peer_addr);
 void nan_pairing_unpair_peer(struct nan_data *nan_data, const u8 *peer_addr);

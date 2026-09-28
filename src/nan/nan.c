@@ -1360,6 +1360,8 @@ void nan_parse_peer_dev_capa_ext(struct nan_data *nan, struct nan_peer *peer,
 		NAN_DEV_CAPA_EXT_INFO_1_PAIRING_SETUP;
 	peer->pairing.pairing_cfg.npk_caching = attrs->dev_capa_ext[1] &
 		NAN_DEV_CAPA_EXT_INFO_1_NPK_NIK_CACHING;
+	peer->pairing.pairing_cfg.pik_caching = attrs->dev_capa_ext[1] &
+		NAN_DEV_CAPA_EXT_INFO_1_PIK_CACHING;
 }
 
 

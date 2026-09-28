@@ -1792,6 +1792,8 @@ struct wpa_supplicant {
 #define MAX_NAN_RADIOS 2
 	struct nan_capa nan_capa;
 	struct nan_data *nan;
+	/* NAN pairwise identities; survive NAN restarts */
+	struct nan_pik_cache *nan_pik_cache;
 	struct nan_cluster_config nan_cluster_config;
 	u8 schedule_sequence_id;
 	struct nan_schedule_config nan_sched[MAX_NAN_RADIOS];

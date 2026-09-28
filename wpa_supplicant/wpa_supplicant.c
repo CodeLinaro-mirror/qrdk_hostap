@@ -9252,6 +9252,7 @@ static void wpa_supplicant_deinit_iface(struct wpa_supplicant *wpa_s,
 	wpas_p2p_deinit_iface(wpa_s);
 
 	wpas_nan_deinit(wpa_s);
+	wpas_nan_deinit_pik_cache(wpa_s);
 
 	wpas_ctrl_radio_work_flush(wpa_s);
 	radio_remove_interface(wpa_s);

@@ -54,6 +54,8 @@
 
 #define DEFAULT_NAN_BOOTSTRAP_COMEBACK_TIMEOUT 1024
 
+#define WPAS_NAN_PIK_CACHE_SIZE 32
+
 /* Default NAN NIK lifetime in seconds - 12 hours */
 #define NAN_NIK_LIFETIME_DEFAULT 43200
 
@@ -1562,6 +1564,12 @@ int wpas_nan_init(struct wpa_supplicant *wpa_s)
 		return -1;
 	}
 
+	/* Pairwise identities are kept across NAN restarts */
+	if (!wpa_s->nan_pik_cache)
+		wpa_s->nan_pik_cache =
+			nan_pik_cache_init(WPAS_NAN_PIK_CACHE_SIZE);
+	nan_set_pik_cache(wpa_s->nan, wpa_s->nan_pik_cache);
+
 	/* Set the default configuration */
 	os_memset(&wpa_s->nan_cluster_config, 0,
 		  sizeof(wpa_s->nan_cluster_config));
@@ -1619,6 +1627,7 @@ void wpas_nan_deinit(struct wpa_supplicant *wpa_s)
 	for (i = 0; i < MAX_NAN_RADIOS; i++)
 		clear_sched_config(&wpa_s->nan_sched[i]);
 
+	nan_set_pik_cache(wpa_s->nan, NULL);
 	nan_deinit(wpa_s->nan);
 	os_free(wpa_s->nan_disallowed_freqs.range);
 	os_memset(&wpa_s->nan_disallowed_freqs, 0,
@@ -1632,6 +1641,19 @@ void wpas_nan_deinit(struct wpa_supplicant *wpa_s)
 	wpa_s->nan_override_potential_avail.n_chans = 0;
 
 	wpa_s->nan = NULL;
+}
+
+
+/**
+ * wpas_nan_deinit_pik_cache - Free the NAN pairwise identity cache
+ * @wpa_s: Interface data
+ *
+ * Called on interface removal; unlike NAN deinit, which keeps the cache.
+ */
+void wpas_nan_deinit_pik_cache(struct wpa_supplicant *wpa_s)
+{
+	nan_pik_cache_deinit(wpa_s->nan_pik_cache);
+	wpa_s->nan_pik_cache = NULL;
 }
 
 
@@ -2094,6 +2116,7 @@ int wpas_nan_set(struct wpa_supplicant *wpa_s, char *cmd)
 	NAN_PARSE_PAIRING_BOOL(pairing_setup);
 	NAN_PARSE_PAIRING_BOOL(npk_caching);
 	NAN_PARSE_PAIRING_BOOL(pairing_verification);
+	NAN_PARSE_PAIRING_BOOL(pik_caching);
 	NAN_PARSE_PAIRING_INT(cipher_suites,
 			      NAN_PAIRING_PASN_128 | NAN_PAIRING_PASN_256);
 	NAN_PARSE_PAIRING_INT(extended_pkbst_method,
