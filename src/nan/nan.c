@@ -4226,28 +4226,123 @@ static void nan_write_nik_list(struct nan_data *nan,
 }
 
 
+/* Tag TLV for all possessed keys of one identity key list */
+static size_t nan_irsa_list_tags(struct nan_data *nan, struct dl_list *list,
+				 enum nan_tag_type type, const u8 *irsa_nonce,
+				 u8 **pos)
+{
+	size_t len = nan_count_nik_list(list);
+
+	if (pos && len)
+		nan_write_nik_list(nan, list, type, irsa_nonce, pos);
+	return len;
+}
+
+
 /* One Tag TLV per identity key list, for all possessed keys in each */
 static size_t nan_irsa_nik_tags(struct nan_data *nan, const u8 *irsa_nonce,
 				u8 **pos)
 {
-	size_t len;
+	return nan_irsa_list_tags(nan, &nan->self_nik_list, NAN_TAG_TYPE_SN,
+				  irsa_nonce, pos) +
+		nan_irsa_list_tags(nan, &nan->peer_nik_list, NAN_TAG_TYPE_DN,
+				   irsa_nonce, pos) +
+		nan_irsa_list_tags(nan, &nan->group_nik_list, NAN_TAG_TYPE_GN,
+				   irsa_nonce, pos);
+}
 
-	len = nan_count_nik_list(&nan->self_nik_list) +
-		nan_count_nik_list(&nan->peer_nik_list) +
-		nan_count_nik_list(&nan->group_nik_list);
-	if (!pos || !len || len > 65535)
+
+/* Tag TLV holding a single NAN Tag derived from an IIK */
+static size_t nan_irsa_iik_tag(struct nan_data *nan, const u8 *iik,
+			       enum nan_tag_type type, const u8 *irsa_nonce,
+			       u8 **pos)
+{
+	struct wpabuf *tag;
+
+	if (!pos)
+		return 2 + NAN_NIRA_TAG_LEN;
+
+	tag = nan_crypto_derive_irsa_tag(iik, NAN_IIK_LEN, nan->cfg->nmi_addr,
+					 irsa_nonce);
+	(*pos)[0] = type;
+	(*pos)[1] = 1;
+	if (tag)
+		os_memcpy(*pos + 2, wpabuf_head(tag), NAN_NIRA_TAG_LEN);
+	else
+		os_memset(*pos + 2, 0, NAN_NIRA_TAG_LEN);
+	wpabuf_free(tag);
+	*pos += 2 + NAN_NIRA_TAG_LEN;
+	return 2 + NAN_NIRA_TAG_LEN;
+}
+
+
+static bool nan_pkbst_records_present(struct nan_data *nan)
+{
+	struct nan_peer *peer;
+
+	if (nan->self_pkr.valid || nan->pending_peer_pkr.valid)
+		return true;
+	dl_list_for_each(peer, &nan->peer_list, struct nan_peer, list) {
+		if (peer->peer_pkr.valid)
+			return true;
+	}
+	return false;
+}
+
+
+/*
+ * Wi-Fi Aware spec R5, Table 25: with PKBST, a device identifies itself with a
+ * Source NAN Tag from its own IIK and the peer it looks for with a
+ * Destination NAN Tag from the peer's IIK. In one-way PKBST, only the
+ * publisher's record is used, so the publisher sends its Source NAN Tag and
+ * the subscriber the Destination NAN Tag of the publisher. In mutual PKBST,
+ * both are sent.
+ *
+ * Returns the length of the tags, or 0 if PKBST does not apply.
+ */
+static size_t nan_irsa_pkbst_tags(struct nan_data *nan, bool is_publisher,
+				  const u8 *irsa_nonce, u8 **pos)
+{
+	struct nan_peer *peer;
+	const u8 *self_iik = nan->self_pkr.valid ? nan->self_pkr.iik : NULL;
+	u8 methods = nan->cfg->pairing_cfg.extended_pkbst_method;
+	size_t len = 0;
+
+	/* A peer with which a PKBST method has been negotiated */
+	dl_list_for_each(peer, &nan->peer_list, struct nan_peer, list) {
+		bool subscriber;
+
+		if (peer->bootstrap.pkbst_mode == NAN_PKBST_MODE_NONE ||
+		    !nan_pairing_is_pkr_usable(&peer->peer_pkr))
+			continue;
+
+		if (peer->pairing.self_pairing_role != NAN_PAIRING_ROLE_IDLE)
+			subscriber = peer->pairing.self_pairing_role ==
+				NAN_PAIRING_ROLE_INITIATOR;
+		else
+			subscriber = !peer->bootstrap.initiator;
+
+		if (self_iik &&
+		    (peer->bootstrap.pkbst_mode == NAN_PKBST_MODE_MUTUAL ||
+		     !subscriber))
+			len += nan_irsa_iik_tag(nan, self_iik, NAN_TAG_TYPE_SN,
+						irsa_nonce, pos);
+		if (peer->bootstrap.pkbst_mode == NAN_PKBST_MODE_MUTUAL ||
+		    subscriber)
+			len += nan_irsa_iik_tag(nan, peer->peer_pkr.iik,
+						NAN_TAG_TYPE_DN, irsa_nonce,
+						pos);
 		return len;
+	}
 
-	if (nan_count_nik_list(&nan->self_nik_list))
-		nan_write_nik_list(nan, &nan->self_nik_list,
-				   NAN_TAG_TYPE_SN, irsa_nonce, pos);
-	if (nan_count_nik_list(&nan->peer_nik_list))
-		nan_write_nik_list(nan, &nan->peer_nik_list,
-				   NAN_TAG_TYPE_DN, irsa_nonce, pos);
-	if (nan_count_nik_list(&nan->group_nik_list))
-		nan_write_nik_list(nan, &nan->group_nik_list,
-				   NAN_TAG_TYPE_GN, irsa_nonce, pos);
-	return len;
+	/* Before negotiation, advertise by role only */
+	if (!methods || !nan_pkbst_records_present(nan))
+		return 0;
+	if (is_publisher || methods == NAN_PBEA_PKBST_MUTUAL)
+		return nan_irsa_list_tags(nan, &nan->self_nik_list,
+					  NAN_TAG_TYPE_SN, irsa_nonce, pos);
+	return nan_irsa_list_tags(nan, &nan->peer_nik_list, NAN_TAG_TYPE_DN,
+				  irsa_nonce, pos);
 }
 
 
@@ -4265,6 +4360,7 @@ int nan_irsa_get_nonce_tag_tlv(struct nan_data *nan, u8 *irsa_nonce,
 			       bool is_publisher)
 {
 	size_t total_len;
+	bool pkbst;
 	u8 *pos;
 
 	if (!nan)
@@ -4275,7 +4371,12 @@ int nan_irsa_get_nonce_tag_tlv(struct nan_data *nan, u8 *irsa_nonce,
 	if (os_get_random(irsa_nonce, NAN_NIRA_NONCE_LEN) < 0)
 		return -1;
 
-	total_len = nan_irsa_nik_tags(nan, irsa_nonce, NULL);
+	pkbst = nan_irsa_pkbst_tags(nan, is_publisher, irsa_nonce, NULL) > 0;
+	if (pkbst)
+		total_len = nan_irsa_pkbst_tags(nan, is_publisher, irsa_nonce,
+						NULL);
+	else
+		total_len = nan_irsa_nik_tags(nan, irsa_nonce, NULL);
 	if (total_len == 0 || total_len > 65535)
 		return 0;
 
@@ -4284,7 +4385,10 @@ int nan_irsa_get_nonce_tag_tlv(struct nan_data *nan, u8 *irsa_nonce,
 		return -1;
 
 	pos = *irsa_tag_tlv;
-	nan_irsa_nik_tags(nan, irsa_nonce, &pos);
+	if (pkbst)
+		nan_irsa_pkbst_tags(nan, is_publisher, irsa_nonce, &pos);
+	else
+		nan_irsa_nik_tags(nan, irsa_nonce, &pos);
 	if ((size_t) (pos - *irsa_tag_tlv) != total_len) {
 		os_free(*irsa_tag_tlv);
 		*irsa_tag_tlv = NULL;
