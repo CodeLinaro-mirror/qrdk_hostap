@@ -28,6 +28,7 @@ enum nan_subtype {
 	NAN_SUBTYPE_SCHEDULE_RESPONSE		= 11,
 	NAN_SUBTYPE_SCHEDULE_CONFIRM		= 12,
 	NAN_SUBTYPE_SCHEDULE_UPDATE_NOTIF	= 13,
+	NAN_SUBTYPE_PROTECTED_TRANSPORT		= 14,
 };
 
 enum nan_attr_id {
@@ -76,6 +77,8 @@ enum nan_attr_id {
 	NAN_ATTR_IRSA = 0x30, /* Identity Resolution Set attribute */
 	NAN_ATTR_RSIA = 0x31, /* Randomize Service ID attribute */
 	NAN_ATTR_PROXY_META = 0x33,
+	NAN_ATTR_PKRA = 0x34, /* Public Key Record attribute */
+	NAN_ATTR_PTA = 0x35, /* Protected Transport attribute */
 	NAN_ATTR_NIKA = 0x3A, /* NAN Identity Key attribute */
 	NAN_ATTR_VENDOR_SPECIFIC = 0xDD,
 };
@@ -692,5 +695,20 @@ struct nan_assoc_nik_entry {
 	struct dl_list list;
 	u8 nik[NAN_NIK_LEN];
 };
+
+/* Wi-Fi Aware R5 spec, Table 35 (Record Control format) */
+#define NAN_PKR_OP_CTRL_MUTUAL_REQUIRED	BIT(0)
+#define NAN_PKR_OP_CTRL_ONE_TIME_USE	BIT(1)
+#define NAN_PKR_OP_CTRL_REVOKED		BIT(2)
+
+/* Wi-Fi Aware R5 spec, Table 156 (PTA format) */
+#define NAN_PTA_CTRL_TLV_PRESENT	BIT(0)
+#define NAN_PTA_TYPE_MASK		0x0f
+#define NAN_PTA_TYPE_REQUEST		0
+#define NAN_PTA_TYPE_RESPONSE		1
+#define NAN_PTA_TYPE_CONFIRM		2
+#define NAN_PTA_STATUS_SHIFT		4
+#define NAN_PTA_STATUS_ACCEPTED		0
+#define NAN_PTA_STATUS_REJECTED		1
 
 #endif /* NAN_DEFS_H */
