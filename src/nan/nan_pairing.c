@@ -2762,6 +2762,9 @@ int nan_pairing_generate_self_pkr(struct nan_data *nan)
 	os_get_reltime(&pkr.created_at);
 
 	nan_pairing_self_pkr_iks(nan, &nan->self_pkr, false);
+	/* Keep the replaced record so that peers can be told to delete it */
+	nan->old_self_pkr = nan->self_pkr;
+	os_memcpy(nan->old_self_isk, nan->self_isk, NAN_ISK_LEN);
 	nan->self_pkr = pkr;
 	os_memcpy(nan->self_isk, isk, NAN_ISK_LEN);
 	nan_pairing_self_pkr_iks(nan, &nan->self_pkr, true);
@@ -3506,4 +3509,78 @@ int nan_pairing_rx_pt(struct nan_data *nan, struct nan_peer *peer,
 				     NAN_PTA_STATUS_ACCEPTED :
 				     NAN_PTA_STATUS_REJECTED);
 	return 0;
+}
+
+
+/**
+ * nan_pairing_send_pkr_update - Send the local record to a paired peer
+ * @nan: NAN data
+ * @peer: Paired peer to receive the update
+ * @send_revoked: Whether to also send the replaced record as revoked
+ * Returns: 0 on success, -1 on failure
+ *
+ * Wi-Fi Aware spec R5 draft v0.0.16, section 7.6.8: records are sent through a
+ * secured channel, here a Protected Transport request. A revoked record
+ * has the Revoked bit set and a Valid Duration of zero, and is placed before
+ * the record replacing it.
+ */
+int nan_pairing_send_pkr_update(struct nan_data *nan, struct nan_peer *peer,
+				bool send_revoked)
+{
+	struct nan_pkr revoked;
+	const struct nan_pkr *pkrs[2];
+	const u8 *isks[2];
+	unsigned int n = 0;
+	struct wpabuf *buf;
+	u8 *len_pos;
+	int ret = -1;
+
+	if (!nan || !peer ||
+	    !nan_pairing_is_peer_paired(nan, peer->nmi_addr) ||
+	    !nan_pairing_is_pkr_usable(&nan->self_pkr) ||
+	    !nan->cfg->send_naf) {
+		wpa_printf(MSG_DEBUG, "NAN: Cannot send PKR update");
+		return -1;
+	}
+
+	if (send_revoked && nan->old_self_pkr.valid) {
+		revoked = nan->old_self_pkr;
+		revoked.op_ctrl |= NAN_PKR_OP_CTRL_REVOKED;
+		revoked.valid_duration = 0;
+		pkrs[n] = &revoked;
+		isks[n++] = nan->old_self_isk;
+	}
+	pkrs[n] = &nan->self_pkr;
+	isks[n++] = nan->self_isk;
+
+	buf = wpabuf_alloc(NAN_PT_HDR_LEN + NAN_ATTR_HDR_LEN + 3 +
+			   NAN_ATTR_HDR_LEN + 1 + n * NAN_PKR_MAX_LEN);
+	if (!buf)
+		return -1;
+	wpabuf_put_u8(buf, WLAN_ACTION_PROTECTED_DUAL);
+	wpabuf_put_u8(buf, WLAN_PA_VENDOR_SPECIFIC);
+	wpabuf_put_be24(buf, OUI_WFA);
+	wpabuf_put_u8(buf, NAN_NAF_OUI_TYPE);
+	wpabuf_put_u8(buf, NAN_SUBTYPE_PROTECTED_TRANSPORT);
+
+	wpabuf_put_u8(buf, NAN_ATTR_PTA);
+	wpabuf_put_le16(buf, 3);
+	wpabuf_put_u8(buf, nan_get_next_dialog_token(nan));
+	wpabuf_put_u8(buf, 0); /* Attribute Control: no list of PT-TLVs */
+	wpabuf_put_u8(buf, NAN_PTA_TYPE_REQUEST);
+
+	wpabuf_put_u8(buf, NAN_ATTR_PKRA);
+	len_pos = wpabuf_put(buf, 2);
+	if (nan_pkra_encode(buf, pkrs, isks, n) < 0)
+		goto out;
+	WPA_PUT_LE16(len_pos, wpabuf_len(buf) -
+		     (len_pos + 2 - wpabuf_head_u8(buf)));
+
+	ret = nan->cfg->send_naf(nan->cfg->cb_ctx, peer->nmi_addr, NULL,
+				 nan->cluster_id, buf);
+	wpa_printf(MSG_DEBUG, "NAN: PKR update (%u records) to " MACSTR ": %d",
+		   n, MAC2STR(peer->nmi_addr), ret);
+out:
+	wpabuf_free(buf);
+	return ret;
 }

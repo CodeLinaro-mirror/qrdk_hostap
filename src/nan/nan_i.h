@@ -32,6 +32,10 @@ struct nan_config;
 #define NAN_GIK_LEN	16	/* Group Identity Key */
 #define NAN_MAX_GIKS	8	/* Local limit on GIKs retained per PKR */
 
+/* Length, fixed fields, GIKs and a DER ECDSA P-256 signature */
+#define NAN_PKR_MAX_LEN	(2 + 1 + 3 + 1 + NAN_IPK_LEN + NAN_IIK_LEN + 4 + 2 + \
+			 NAN_MAX_GIKS * NAN_GIK_LEN + 72)
+
 #define NAN_PKBST_PASSWORD_LEN	32
 
 #define NAN_ELEMENT_MAX_SIZE 1024
@@ -732,6 +736,9 @@ struct nan_peer {
  *	known; applied to the next peer that is added
  * @pik_cache: Pairwise Identity Keys of paired peers. Owned by the
  *	nan_set_pik_cache() caller so that it survives NAN restarts.
+ * @old_self_pkr: Local record replaced by the last generated one, kept to be
+ *	sent as revoked to paired peers
+ * @old_self_isk: Individual Secret Key for @old_self_pkr
  */
 struct nan_data {
 	struct nan_config *cfg;
@@ -766,6 +773,8 @@ struct nan_data {
 	u8 self_isk[NAN_ISK_LEN];
 	struct nan_pkr pending_peer_pkr;
 	struct nan_pik_cache *pik_cache;
+	struct nan_pkr old_self_pkr;
+	u8 old_self_isk[NAN_ISK_LEN];
 };
 
 struct nan_attrs_entry {

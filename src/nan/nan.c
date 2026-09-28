@@ -458,6 +458,8 @@ void nan_flush(struct nan_data *nan)
 	os_memset(&nan->self_pkr, 0, sizeof(nan->self_pkr));
 	os_memset(nan->self_isk, 0, sizeof(nan->self_isk));
 	os_memset(&nan->pending_peer_pkr, 0, sizeof(nan->pending_peer_pkr));
+	os_memset(&nan->old_self_pkr, 0, sizeof(nan->old_self_pkr));
+	os_memset(nan->old_self_isk, 0, sizeof(nan->old_self_isk));
 }
 
 
