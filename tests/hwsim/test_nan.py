@@ -2704,3 +2704,189 @@ def test_nan_stopped_on_iface_removal_with_ndp(dev, apdev, params):
         if not radio1_destroyed:
             radio1.__exit__(None, None, None)
         set_country("00")
+
+# Public Key Records, given as a PKRA body holding one signed record
+# (Wi-Fi Aware spec R5, Table 34 (PKR format) and Table 155 (PKRA format)):
+#   Number of PKRs | Length | Version | Record Control | Cipher Version |
+#   IPK | IIK | Valid Duration | Number of GIKs | GIK | Record Signature
+PKR_A = (
+    "01" "0093" "00" "040000" "00"
+    "02c3165f0e14546cf26bda70924c83bd8eb8206465c1df26a13ddd057ee36acf9b"
+    "12d234d66a46474285f4146a0d2d24bc"
+    "00002760" "0001" "0f3c1a64ff696c98edceab43ad593d3b"
+    "30450220075a3f15893e9be8dd32708b7ea12b83edecd39fe7f3050a4be4a9590137dea2"
+    "022100b083388c39bde39f745c4f189a1afd87cb174ea75338cccddeb56a3a5d97422d")
+ISK_A = "15d1e60d88274c670b8f8fb0a3c6955cb2df36764ee6ad47433a9c590d832c55"
+IIK_A = "12d234d66a46474285f4146a0d2d24bc"
+
+PKR_B = (
+    "01" "0093" "00" "040000" "00"
+    "0246d63a143a1b2618363b1c689ce1e8acb4dfd1ae3ebf39f431c389a0d29bbc96"
+    "d69871c9cb705290dc72c359d968b101"
+    "00002760" "0001" "0f3c1a64ff696c98edceab43ad593d3b"
+    "3045022100f040bf58daa52777abce0000807eb3991824afe276926ae62030f73718d9b23e"
+    "022035f002cb0d7b1d824f9008204b4e7efaa679610c90a02d50700a98c70efcc9e9")
+ISK_B = "324dba74c41f1a8507733be7f2637837f40e7ca15c387cd18447aaccdccb48b8"
+IIK_B = "d69871c9cb705290dc72c359d968b101"
+GIK = "0f3c1a64ff696c98edceab43ad593d3b"
+
+SERVICE_NAME = "pkbst_test"
+
+def pkbst_config(dev, method, self_pkr=None, self_isk=None, peer_pkr=None):
+    dev.set("pairing_setup", "1")
+    dev.set("extended_pkbst_method", str(method))
+    if self_pkr:
+        dev.set("self_pkr", self_pkr)
+    if self_isk:
+        dev.set("self_isk", self_isk)
+    if peer_pkr:
+        dev.set("peer_pkr", peer_pkr)
+
+def pkbst_discover_bootstrap(pub, sub, method, pub_pbm=0, randomized=False):
+    for dev in (pub, sub):
+        if "OK" not in dev.schedule_config((2437, "0e000000")):
+            raise Exception("Failed to configure schedule")
+
+    pid = pub.publish(SERVICE_NAME, ssi="aabbccdd", unsolicited=0,
+                      pbm=pub_pbm, extended_pbm=method,
+                      randomized_service_id=1 if randomized else 0)
+    sid = sub.subscribe(SERVICE_NAME, ssi="ddbbccaa", active=1,
+                        extended_pbm=method,
+                        randomized_service_id=1 if randomized else 0)
+
+    ev = sub.wpas.wait_event(["NAN-DISCOVERY-RESULT"], timeout=2)
+    if ev is None:
+        raise Exception("NAN-DISCOVERY-RESULT not seen")
+    paddr = pub.wpas.own_addr()
+    nan_sync_verify_event(ev, paddr, pid, sid, "aabbccdd")
+    if pub.wpas.wait_event(["NAN-REPLIED"], timeout=2) is None:
+        raise Exception("NAN-REPLIED not seen")
+
+    sub.bootstrap(paddr, sid, pid, method)
+    for dev in (sub, pub):
+        if dev.wpas.wait_event(["NAN-BOOTSTRAP-SUCCESS"], timeout=2) is None:
+            raise Exception("NAN-BOOTSTRAP-SUCCESS not seen")
+    return pid, sid
+
+def pkbst_pair(pub, sub, method, pub_pbm=0, randomized=False):
+    pid, sid = pkbst_discover_bootstrap(pub, sub, method, pub_pbm,
+                                        randomized)
+    # The SAE password is derived from the IPKs; the configured password
+    # must not be used.
+    return run_nan_pairing(sub, pub, pid, sid, "SAE", password="unused")
+
+def pkbst_pair_fails(pub, sub, method):
+    pid, sid = pkbst_discover_bootstrap(pub, sub, method)
+    try:
+        run_nan_pairing(sub, pub, pid, sid, "SAE", password="unused")
+    except Exception as e:
+        logger.info("Pairing failed as expected: " + str(e))
+        return
+    raise Exception("PKBST pairing succeeded unexpectedly")
+
+def test_nan_pkbst_provisioning(dev, apdev):
+    """NAN PKBST record provisioning"""
+    with hwsim_nan_radios(count=1) as [wpas1], \
+         NanDevice(wpas1, "nan0") as nan:
+        if "FAIL" not in nan.wpas.request("NAN_GET self_pkr"):
+            raise Exception("Export without a record")
+        nan.set("self_pkr", PKR_A)
+        if "FAIL" not in nan.wpas.request("NAN_GET self_pkr"):
+            raise Exception("Export without an ISK")
+        nan.set("self_isk", ISK_A)
+        blob = nan.wpas.request("NAN_GET self_pkr").strip()
+        if "FAIL" in blob or ISK_A in blob or IIK_A not in blob:
+            raise Exception("Invalid export: " + blob)
+
+        # Tampered, unsigned, and multi-record blobs are rejected
+        bad = PKR_A[:-2] + ("00" if PKR_A[-2:] != "00" else "01")
+        unsigned = "01" + "004e" + PKR_A[6:6 + 2 * 0x4e]
+        for val in (bad, unsigned, "02" + PKR_A[2:] + PKR_A[2:]):
+            if "FAIL" not in nan.wpas.request("NAN_SET peer_pkr " + val):
+                raise Exception("Invalid record accepted")
+
+        # Installing another record drops the ISK of the previous one
+        nan.set("self_pkr", PKR_B)
+        if "FAIL" not in nan.wpas.request("NAN_GET self_pkr"):
+            raise Exception("ISK kept for a different record")
+
+def test_nan_pkbst_one_way_subscriber(dev, apdev):
+    """NAN one-way PKBST, subscriber knows the publisher record"""
+    with hwsim_nan_radios(count=2) as [wpas1, wpas2], \
+         NanDevice(wpas1, "nan0") as pub, NanDevice(wpas2, "nan1") as sub:
+        pkbst_config(pub, 1, self_pkr=PKR_A, self_isk=ISK_A)
+        pkbst_config(sub, 1, peer_pkr=PKR_A)
+        pkbst_pair(pub, sub, 1, pub_pbm=0x06)
+
+def test_nan_pkbst_one_way_publisher(dev, apdev):
+    """NAN one-way PKBST, publisher group identity resolved by subscriber"""
+    with hwsim_nan_radios(count=2) as [wpas1, wpas2], \
+         NanDevice(wpas1, "nan0") as pub, NanDevice(wpas2, "nan1") as sub:
+        pkbst_config(pub, 1, self_pkr=PKR_B, self_isk=ISK_B)
+        pkbst_config(sub, 1, peer_pkr=PKR_B)
+        sub.set("group_nik", GIK + " 1")
+        pkbst_pair(pub, sub, 1)
+
+def test_nan_pkbst_mutual(dev, apdev):
+    """NAN mutual PKBST"""
+    with hwsim_nan_radios(count=2) as [wpas1, wpas2], \
+         NanDevice(wpas1, "nan0") as pub, NanDevice(wpas2, "nan1") as sub:
+        pkbst_config(pub, 2, self_pkr=PKR_B, self_isk=ISK_B, peer_pkr=PKR_A)
+        pkbst_config(sub, 2, self_pkr=PKR_A, self_isk=ISK_A, peer_pkr=PKR_B)
+        pkbst_pair(pub, sub, 2)
+
+def test_nan_pkbst_mutual_service_id_randomization(dev, apdev):
+    """NAN mutual PKBST with Service ID randomization"""
+    with hwsim_nan_radios(count=2) as [wpas1, wpas2], \
+         NanDevice(wpas1, "nan0") as pub, NanDevice(wpas2, "nan1") as sub:
+        pkbst_config(pub, 2, self_pkr=PKR_B, self_isk=ISK_B, peer_pkr=PKR_A)
+        pkbst_config(sub, 2, self_pkr=PKR_A, self_isk=ISK_A, peer_pkr=PKR_B)
+        pkbst_pair(pub, sub, 2, randomized=True)
+
+def test_nan_pkbst_mutual_roles_swapped(dev, apdev):
+    """NAN mutual PKBST with the records of the two devices swapped"""
+    with hwsim_nan_radios(count=2) as [wpas1, wpas2], \
+         NanDevice(wpas1, "nan0") as pub, NanDevice(wpas2, "nan1") as sub:
+        pkbst_config(pub, 2, self_pkr=PKR_A, self_isk=ISK_A, peer_pkr=PKR_B)
+        pkbst_config(sub, 2, self_pkr=PKR_B, self_isk=ISK_B, peer_pkr=PKR_A)
+        pkbst_pair(pub, sub, 2, pub_pbm=0x06)
+
+def test_nan_pkbst_wrong_isk(dev, apdev):
+    """NAN one-way PKBST fails when the publisher does not hold the ISK"""
+    with hwsim_nan_radios(count=2) as [wpas1, wpas2], \
+         NanDevice(wpas1, "nan0") as pub, NanDevice(wpas2, "nan1") as sub:
+        pkbst_config(pub, 1, self_pkr=PKR_A, self_isk=ISK_B)
+        pkbst_config(sub, 1, peer_pkr=PKR_A)
+        pkbst_pair_fails(pub, sub, 1)
+
+def test_nan_pkbst_mutual_wrong_isk(dev, apdev):
+    """NAN mutual PKBST fails when the subscriber does not hold the ISK"""
+    with hwsim_nan_radios(count=2) as [wpas1, wpas2], \
+         NanDevice(wpas1, "nan0") as pub, NanDevice(wpas2, "nan1") as sub:
+        pkbst_config(pub, 2, self_pkr=PKR_B, self_isk=ISK_B, peer_pkr=PKR_A)
+        pkbst_config(sub, 2, self_pkr=PKR_A, self_isk=ISK_B, peer_pkr=PKR_B)
+        pkbst_pair_fails(pub, sub, 2)
+
+def test_nan_pkbst_missing_peer_record(dev, apdev):
+    """NAN one-way PKBST fails without the publisher record"""
+    with hwsim_nan_radios(count=2) as [wpas1, wpas2], \
+         NanDevice(wpas1, "nan0") as pub, NanDevice(wpas2, "nan1") as sub:
+        pkbst_config(pub, 1, self_pkr=PKR_A, self_isk=ISK_A)
+        pkbst_config(sub, 1)
+        pkbst_pair_fails(pub, sub, 1)
+
+def test_nan_pkbst_generated_record(dev, apdev):
+    """NAN one-way PKBST with a locally generated record"""
+    with hwsim_nan_radios(count=2) as [wpas1, wpas2], \
+         NanDevice(wpas1, "nan0") as pub, NanDevice(wpas2, "nan1") as sub:
+        pkbst_config(pub, 1)
+        pub.set("generate_self_pkr", "1")
+        blob = pub.wpas.request("NAN_GET self_pkr").strip()
+        if "FAIL" in blob or blob[:2] != "01":
+            raise Exception("Invalid export: " + blob)
+        if int(blob[2:6], 16) * 2 + 6 != len(blob):
+            raise Exception("Inconsistent record length")
+        if blob[16:18] not in ("02", "03"):
+            raise Exception("IPK is not a compressed P-256 point")
+        pkbst_config(sub, 1, peer_pkr=blob)
+        pkbst_pair(pub, sub, 1, pub_pbm=0x06)
