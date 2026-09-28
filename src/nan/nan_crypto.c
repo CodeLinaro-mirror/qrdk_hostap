@@ -1059,3 +1059,52 @@ struct wpabuf * nan_crypto_sign_pkr(const u8 *isk, const u8 *data,
 	crypto_ec_key_deinit(key);
 	return sig;
 }
+
+
+/**
+ * nan_crypto_derive_pkbst_password - Derive the SAE password for PKBST
+ * @ipk_pub: Publisher (Pairing Responder) IPK
+ * @ipk_sub: Subscriber (Pairing Initiator) IPK for mutual PKBST, or %NULL
+ * @initiator_nmi: Pairing Initiator NMI
+ * @responder_nmi: Pairing Responder NMI
+ * @password: Buffer for the NAN_PKBST_PASSWORD_LEN octet password
+ * Returns: 0 on success, -1 on failure
+ *
+ * Wi-Fi Aware spec R5 draft v0.0.16, Table 36:
+ * HKDF-Expand(HKDF-Extract(0, IPKp || [IPKs]),
+ *	       "SAE Password Derivation" || Initiator NMI || Responder NMI, 32)
+ */
+int nan_crypto_derive_pkbst_password(const u8 *ipk_pub, const u8 *ipk_sub,
+				     const u8 *initiator_nmi,
+				     const u8 *responder_nmi, u8 *password)
+{
+	int ret;
+	size_t len[2];
+	const u8 *addr[2];
+	u8 salt[SHA256_MAC_LEN], prk[SHA256_MAC_LEN];
+	static const char label[] = "SAE Password Derivation";
+	u8 info[sizeof(label) - 1 + 2 * ETH_ALEN];
+
+	if (!ipk_pub || !initiator_nmi || !responder_nmi || !password)
+		return -1;
+
+	addr[0] = ipk_pub;
+	len[0] = NAN_IPK_LEN;
+	addr[1] = ipk_sub;
+	len[1] = NAN_IPK_LEN;
+	os_memset(salt, 0, sizeof(salt));
+	if (hmac_sha256_vector(salt, sizeof(salt), ipk_sub ? 2 : 1, addr, len,
+			       prk) < 0)
+		return -1;
+
+	os_memcpy(info, label, sizeof(label) - 1);
+	os_memcpy(&info[sizeof(label) - 1], initiator_nmi, ETH_ALEN);
+	os_memcpy(&info[sizeof(label) - 1 + ETH_ALEN], responder_nmi,
+		  ETH_ALEN);
+
+	/* With no label, hmac_sha256_kdf() is HKDF-Expand (RFC 5869) */
+	ret = hmac_sha256_kdf(prk, sizeof(prk), NULL, info, sizeof(info),
+			      password, NAN_PKBST_PASSWORD_LEN);
+	forced_memzero(prk, sizeof(prk));
+	return ret;
+}

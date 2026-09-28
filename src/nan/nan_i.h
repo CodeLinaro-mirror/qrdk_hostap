@@ -32,6 +32,8 @@ struct nan_config;
 #define NAN_GIK_LEN	16	/* Group Identity Key */
 #define NAN_MAX_GIKS	8	/* Local limit on GIKs retained per PKR */
 
+#define NAN_PKBST_PASSWORD_LEN	32
+
 #define NAN_ELEMENT_MAX_SIZE 1024
 
 /**
@@ -886,6 +888,9 @@ int nan_crypto_verify_pkr_signature(const u8 *ipk,
 				    const u8 *sig, size_t sig_len);
 struct wpabuf * nan_crypto_sign_pkr(const u8 *isk, const u8 *data,
 				    size_t data_len);
+int nan_crypto_derive_pkbst_password(const u8 *ipk_pub, const u8 *ipk_sub,
+				     const u8 *initiator_nmi,
+				     const u8 *responder_nmi, u8 *password);
 int nan_crypto_derive_npk(const u8 *kdk, size_t kdk_len,
 			  enum nan_cipher_suite_id cipher,
 			  const u8 *initiator_nmi, const u8 *responder_nmi,

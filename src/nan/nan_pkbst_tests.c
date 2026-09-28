@@ -493,6 +493,57 @@ out:
 }
 
 
+static int test_pkbst_password(void)
+{
+	/*
+	 * Self-generated test vectors for the Wi-Fi Aware spec R5 draft
+	 * v0.0.16, Table 36 SAE Password derivation (HKDF-SHA256, RFC 5869)
+	 */
+	static const u8 one_way[NAN_PKBST_PASSWORD_LEN] = {
+		0x5e, 0xf3, 0xf8, 0x63, 0xbb, 0x28, 0x14, 0x22,
+		0xd3, 0x28, 0x02, 0x55, 0x0b, 0x68, 0x9e, 0xbf,
+		0x71, 0xe4, 0xab, 0xf9, 0x14, 0x71, 0xf4, 0xdb,
+		0x89, 0x80, 0x6d, 0xe4, 0xd9, 0xe7, 0x22, 0xf3
+	};
+	static const u8 mutual[NAN_PKBST_PASSWORD_LEN] = {
+		0xef, 0xdc, 0x74, 0x05, 0xbe, 0xba, 0xe7, 0x51,
+		0x8d, 0xb8, 0x9e, 0x9d, 0xed, 0x0e, 0x55, 0x33,
+		0x1c, 0xef, 0xe6, 0x79, 0x1b, 0xe1, 0xd2, 0x9c,
+		0x4b, 0xf7, 0x01, 0xac, 0x23, 0x69, 0xd4, 0xab
+	};
+	const u8 init_nmi[ETH_ALEN] = { 0x02, 0x10, 0x20, 0x30, 0x40, 0x50 };
+	const u8 resp_nmi[ETH_ALEN] = { 0x02, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0 };
+	u8 ipk_pub[NAN_IPK_LEN], ipk_sub[NAN_IPK_LEN];
+	u8 pw[NAN_PKBST_PASSWORD_LEN];
+	unsigned int i;
+
+	ipk_pub[0] = 0x02;
+	ipk_sub[0] = 0x03;
+	for (i = 1; i < NAN_IPK_LEN; i++) {
+		ipk_pub[i] = i;
+		ipk_sub[i] = 0x3f + i;
+	}
+
+	if (nan_crypto_derive_pkbst_password(ipk_pub, NULL, init_nmi,
+					     resp_nmi, pw) < 0 ||
+	    os_memcmp(pw, one_way, sizeof(pw)) != 0 ||
+	    nan_crypto_derive_pkbst_password(ipk_pub, ipk_sub, init_nmi,
+					     resp_nmi, pw) < 0 ||
+	    os_memcmp(pw, mutual, sizeof(pw)) != 0 ||
+	    /* NMI order is significant */
+	    nan_crypto_derive_pkbst_password(ipk_pub, ipk_sub, resp_nmi,
+					     init_nmi, pw) < 0 ||
+	    os_memcmp(pw, mutual, sizeof(pw)) == 0 ||
+	    nan_crypto_derive_pkbst_password(NULL, ipk_sub, init_nmi,
+					     resp_nmi, pw) == 0) {
+		wpa_printf(MSG_ERROR, "FAIL: PKBST password derivation");
+		return -1;
+	}
+
+	return 0;
+}
+
+
 /**
  * nan_pkbst_tests - Run NAN PKBST unit tests
  * Returns: 0 on success, -1 on failure
@@ -500,7 +551,8 @@ out:
 int nan_pkbst_tests(void)
 {
 	if (test_pkr_usable() || test_pkr_signature() || test_pkr_encode() ||
-	    test_pkr_parse() || test_pkr_parse_optional() || test_pkra())
+	    test_pkr_parse() || test_pkr_parse_optional() || test_pkra() ||
+	    test_pkbst_password())
 		return -1;
 	return 0;
 }
