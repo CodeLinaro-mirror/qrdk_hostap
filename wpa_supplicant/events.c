@@ -6302,6 +6302,15 @@ static void wpas_event_rx_mgmt_action(struct wpa_supplicant *wpa_s,
 		}
 
 		if (WPA_GET_BE32(&payload[1]) == NAN_NAF_VENDOR_TYPE) {
+			/* Protected Transport carries security sensitive
+			 * information and is only accepted when protected.
+			 */
+			if (category == WLAN_ACTION_PUBLIC && plen >= 6 &&
+			    payload[5] == NAN_SUBTYPE_PROTECTED_TRANSPORT) {
+				wpa_printf(MSG_DEBUG,
+					   "NAN: Drop unprotected Protected Transport frame");
+				return;
+			}
 			wpas_nan_rx_naf(wpa_s, mgmt, len);
 			return;
 		}
