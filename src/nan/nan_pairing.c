@@ -27,6 +27,16 @@ static int nan_pairing_prepare_data_element(void *ctx, const u8 *peer_addr);
 static int nan_pairing_parse_data_element(void *ctx, const u8 *data,
 					  size_t len);
 
+
+/* PKBST identity confirmation applies to pairing setup using SAE */
+static bool nan_pairing_pkbst_setup(struct nan_peer *peer)
+{
+	return peer->bootstrap.pkbst_mode != NAN_PKBST_MODE_NONE &&
+		!(peer->pairing.flags & NAN_PAIRING_FLAG_NPK_VERIFICATION) &&
+		peer->pairing.pasn && peer->pairing.pasn->sae.tmp;
+}
+
+
 /**
  * nan_pairing_is_pkr_usable - Check whether a PKR may be used
  * @pkr: NAN Pairing Key Record
@@ -384,6 +394,8 @@ void nan_pairing_deinit_peer(struct nan_data *nan_data, struct nan_peer *peer,
 {
 	wpabuf_free(peer->pairing.pending_auth1);
 	peer->pairing.pending_auth1 = NULL;
+	wpabuf_free(peer->pairing.peer_key_auth);
+	peer->pairing.peer_key_auth = NULL;
 
 	os_free(peer->pairing.psi_locale);
 	peer->pairing.psi_locale = NULL;
@@ -751,6 +763,58 @@ static int nan_validate_custom_pmkid(void *ctx, const u8 *addr, const u8 *pmkid)
 }
 
 
+/* Verify the peer's FKCE KeyAuth, signed with the ISK of its record */
+static int nan_pairing_verify_fkce(struct nan_data *nan, struct nan_peer *peer,
+				   const struct wpabuf *key_auth)
+{
+	bool responder =
+		peer->pairing.self_pairing_role == NAN_PAIRING_ROLE_RESPONDER;
+	struct wpabuf *input;
+	int ret = -1;
+
+	if (!key_auth) {
+		wpa_printf(MSG_INFO, "NAN: Pairing: PKBST FKCE missing");
+		return -1;
+	}
+
+	input = nan_crypto_build_fkce_input(&peer->pairing.pasn->sae,
+					    peer->peer_pkr.ipk,
+					    responder ? peer->nmi_addr :
+					    nan->cfg->nmi_addr,
+					    responder ? nan->cfg->nmi_addr :
+					    peer->nmi_addr,
+					    responder);
+	if (input) {
+		ret = nan_crypto_verify_fkce(peer->peer_pkr.ipk, input,
+					     wpabuf_head(key_auth),
+					     wpabuf_len(key_auth));
+		wpabuf_free(input);
+	}
+	wpa_printf(MSG_DEBUG, "NAN: Pairing: PKBST FKCE %s",
+		   ret ? "invalid" : "verified");
+	return ret;
+}
+
+
+/* PASN callback: verify the responder's identity before auth 3 is sent */
+static int nan_pairing_verify_auth2(void *ctx, const u8 *peer_addr)
+{
+	struct nan_data *nan = ctx;
+	struct nan_peer *peer = nan_get_peer(nan, peer_addr);
+	int ret;
+
+	if (!peer || !peer->pairing.pasn)
+		return -1;
+	if (!nan_pairing_pkbst_setup(peer))
+		return 0;
+
+	ret = nan_pairing_verify_fkce(nan, peer, peer->pairing.peer_key_auth);
+	wpabuf_free(peer->pairing.peer_key_auth);
+	peer->pairing.peer_key_auth = NULL;
+	return ret;
+}
+
+
 static int nan_pairing_pasn_initialize(struct nan_data *nan_data,
 				       struct nan_peer *peer, u8 auth_mode,
 				       int cipher, const char *password,
@@ -898,6 +962,7 @@ static int nan_pairing_pasn_initialize(struct nan_data *nan_data,
 	 * install the NM-TK before M2 transmission.
 	 */
 	pasn->prepare_data_element = nan_pairing_prepare_data_element;
+	pasn->verify_auth2 = nan_pairing_verify_auth2;
 
 	/* Register encrypted data callbacks to embed and parse the NIK
 	 * in PASN Authentication frames when the peer is not in a NAN cluster.
@@ -1770,6 +1835,24 @@ static int nan_pairing_handle_auth_1(struct nan_data *nan_data,
 }
 
 
+/* KeyAuth of the FKCE in a received PASN authentication frame */
+static struct wpabuf *
+nan_pairing_get_key_auth(const struct ieee80211_mgmt *mgmt, size_t len)
+{
+	const u8 *ie;
+	size_t ies_len;
+
+	if (len < offsetof(struct ieee80211_mgmt, u.auth.variable))
+		return NULL;
+	ies_len = len - offsetof(struct ieee80211_mgmt, u.auth.variable);
+	ie = get_ie_ext(mgmt->u.auth.variable, ies_len,
+			WLAN_EID_EXT_FILS_KEY_CONFIRM);
+	if (!ie || ie[1] < 2)
+		return NULL;
+	return wpabuf_alloc_copy(ie + 3, ie[1] - 1);
+}
+
+
 static int nan_pairing_handle_auth_2(struct nan_data *nan_data,
 				     struct nan_peer *peer,
 				     const struct ieee80211_mgmt *mgmt,
@@ -1777,6 +1860,10 @@ static int nan_pairing_handle_auth_2(struct nan_data *nan_data,
 {
 	struct wpa_pasn_params_data pasn_data;
 	struct pasn_data *pasn = peer->pairing.pasn;
+
+	/* Verified by nan_pairing_verify_auth2() once SAE is processed */
+	wpabuf_free(peer->pairing.peer_key_auth);
+	peer->pairing.peer_key_auth = nan_pairing_get_key_auth(mgmt, len);
 
 	if (wpa_pasn_auth_rx(peer->pairing.pasn, (const u8 *)mgmt, len,
 			     &pasn_data) < 0) {
@@ -1810,7 +1897,19 @@ static int nan_pairing_handle_auth_3(struct nan_data *nan_data,
 		status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 		wpa_printf(MSG_DEBUG, "NAN: Pairing: Handle Auth3 failed");
 	} else {
-		if (nan_pairing_derive_nd_pmk(nan_data, peer, nd_pmk)) {
+		/* Mutual PKBST: the initiator confirms its identity in M3 */
+		if (nan_pairing_pkbst_setup(peer) &&
+		    peer->bootstrap.pkbst_mode == NAN_PKBST_MODE_MUTUAL) {
+			struct wpabuf *key_auth;
+
+			key_auth = nan_pairing_get_key_auth(mgmt, len);
+			if (nan_pairing_verify_fkce(nan_data, peer, key_auth))
+				status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			wpabuf_free(key_auth);
+		}
+
+		if (status == WLAN_STATUS_SUCCESS &&
+		    nan_pairing_derive_nd_pmk(nan_data, peer, nd_pmk)) {
 			status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			wpa_printf(MSG_DEBUG,
 				   "NAN: Pairing: Failed to derive ND PMK");
@@ -2755,6 +2854,56 @@ nan_pairing_build_nika(struct nan_data *nan_data, const struct nan_peer *peer,
 }
 
 
+/**
+ * Wi-Fi Aware spec R5, section 7.6.8: the Pairing Responder includes an FKCE in
+ * PASN auth 2 whose KeyAuth is signed with the ISK of its record; in mutual
+ * PKBST, the Pairing Initiator also includes one in PASN auth 3. The element is
+ * appended to the extra elements of the next PASN Authentication frame.
+ */
+static int nan_pairing_add_fkce(struct nan_data *nan, struct nan_peer *peer)
+{
+	struct pasn_data *pasn = peer->pairing.pasn;
+	bool responder =
+		peer->pairing.self_pairing_role == NAN_PAIRING_ROLE_RESPONDER;
+	const u8 *init_nmi, *resp_nmi;
+	struct wpabuf *input, *key_auth = NULL, *ies = NULL;
+	int ret = -1;
+
+	if (!nan_pairing_pkbst_setup(peer) ||
+	    (!responder && peer->bootstrap.pkbst_mode != NAN_PKBST_MODE_MUTUAL))
+		return 0;
+
+	init_nmi = responder ? peer->nmi_addr : nan->cfg->nmi_addr;
+	resp_nmi = responder ? nan->cfg->nmi_addr : peer->nmi_addr;
+	input = nan_crypto_build_fkce_input(&pasn->sae, nan->self_pkr.ipk,
+					    init_nmi, resp_nmi, responder);
+	if (input)
+		key_auth = nan_crypto_compute_fkce(nan->self_isk, input);
+	if (!key_auth || wpabuf_len(key_auth) > 254) {
+		wpa_printf(MSG_INFO, "NAN: Pairing: Failed to build FKCE");
+		goto out;
+	}
+
+	ies = wpabuf_alloc(pasn->extra_ies_len + 3 + wpabuf_len(key_auth));
+	if (!ies)
+		goto out;
+	if (pasn->extra_ies_len)
+		wpabuf_put_data(ies, pasn->extra_ies, pasn->extra_ies_len);
+	wpabuf_put_u8(ies, WLAN_EID_EXTENSION);
+	wpabuf_put_u8(ies, 1 + wpabuf_len(key_auth));
+	wpabuf_put_u8(ies, WLAN_EID_EXT_FILS_KEY_CONFIRM);
+	wpabuf_put_buf(ies, key_auth);
+	ret = pasn_set_extra_ies(pasn, wpabuf_head(ies), wpabuf_len(ies));
+	wpa_printf(MSG_DEBUG, "NAN: Pairing: FKCE added to PASN auth %d",
+		   responder ? 2 : 3);
+out:
+	wpabuf_free(ies);
+	wpabuf_free(key_auth);
+	wpabuf_free(input);
+	return ret;
+}
+
+
 /*
  * nan_pairing_prepare_data_element - PASN callback for pairing data
  *
@@ -2802,6 +2951,9 @@ static int nan_pairing_prepare_data_element(void *ctx, const u8 *peer_addr)
 						 pasn->ptk.tk_len) == 0)
 			peer->pairing.nm_tk_installed = true;
 	}
+
+	if (nan_pairing_add_fkce(nan_data, peer) < 0)
+		return -1;
 
 	if (!is_non_cluster)
 		return 0;
