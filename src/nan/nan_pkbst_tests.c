@@ -418,6 +418,81 @@ out:
 }
 
 
+struct test_pkra_ctx {
+	struct nan_pkr pkrs[2];
+	unsigned int count;
+};
+
+
+static int test_pkra_cb(void *ctx, const struct nan_pkr *pkr)
+{
+	struct test_pkra_ctx *c = ctx;
+
+	if (c->count >= ARRAY_SIZE(c->pkrs))
+		return -1;
+	c->pkrs[c->count++] = *pkr;
+	return 0;
+}
+
+
+static int test_pkra(void)
+{
+	struct nan_pkr pkr[2];
+	const struct nan_pkr *pkrs[2] = { &pkr[0], &pkr[1] };
+	u8 isk[2][NAN_ISK_LEN];
+	const u8 *isks[2] = { isk[0], isk[1] };
+	struct test_pkra_ctx ctx;
+	struct wpabuf *buf = NULL;
+	u8 *pos;
+	size_t rec0_len;
+	int ret = -1;
+
+	if (test_make_pkr(&pkr[0], isk[0]) < 0 ||
+	    test_make_pkr(&pkr[1], isk[1]) < 0)
+		goto out;
+	pkr[0].op_ctrl = NAN_PKR_OP_CTRL_REVOKED;
+	pkr[0].valid_duration = 0;
+
+	buf = wpabuf_alloc(512);
+	if (!buf || nan_pkra_encode(buf, pkrs, isks, 2) < 0)
+		goto out;
+	pos = wpabuf_mhead_u8(buf);
+	os_memset(&ctx, 0, sizeof(ctx));
+	if (pos[0] != 2 ||
+	    nan_pkra_parse(pos, wpabuf_len(buf), test_pkra_cb, &ctx) != 2 ||
+	    ctx.count != 2 || ctx.pkrs[0].op_ctrl != NAN_PKR_OP_CTRL_REVOKED ||
+	    os_memcmp(ctx.pkrs[1].ipk, pkr[1].ipk, NAN_IPK_LEN) != 0)
+		goto out;
+
+	/* An invalid record is skipped; the next one is still delivered */
+	rec0_len = 2 + WPA_GET_BE16(&pos[1]);
+	pos[1 + rec0_len - 1] ^= 0x01;
+	os_memset(&ctx, 0, sizeof(ctx));
+	if (nan_pkra_parse(pos, wpabuf_len(buf), test_pkra_cb, &ctx) != 1 ||
+	    os_memcmp(ctx.pkrs[0].ipk, pkr[1].ipk, NAN_IPK_LEN) != 0)
+		goto out;
+
+	/* Number of PKRs larger than the records present */
+	pos[0] = 3;
+	if (nan_pkra_parse(pos, wpabuf_len(buf), test_pkra_cb, &ctx) >= 0)
+		goto out;
+
+	/* Failure leaves the buffer unchanged */
+	buf->used = 0;
+	pkr[1].valid = false;
+	if (nan_pkra_encode(buf, pkrs, isks, 2) == 0 || wpabuf_len(buf))
+		goto out;
+
+	ret = 0;
+out:
+	if (ret)
+		wpa_printf(MSG_ERROR, "FAIL: PKRA list encoding/parsing");
+	forced_memzero(isk, sizeof(isk));
+	wpabuf_free(buf);
+	return ret;
+}
+
+
 /**
  * nan_pkbst_tests - Run NAN PKBST unit tests
  * Returns: 0 on success, -1 on failure
@@ -425,7 +500,7 @@ out:
 int nan_pkbst_tests(void)
 {
 	if (test_pkr_usable() || test_pkr_signature() || test_pkr_encode() ||
-	    test_pkr_parse() || test_pkr_parse_optional())
+	    test_pkr_parse() || test_pkr_parse_optional() || test_pkra())
 		return -1;
 	return 0;
 }

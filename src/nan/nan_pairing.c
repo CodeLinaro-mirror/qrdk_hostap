@@ -230,6 +230,90 @@ truncated:
 
 
 /**
+ * nan_pkra_encode - Encode the body of a Public Key Record attribute
+ * @buf: Buffer to append Number of PKRs and List of PKRs to
+ * @pkrs: Records to encode
+ * @isks: Individual Secret Key for each entry in @pkrs
+ * @num_pkrs: Number of records (1-255)
+ * Returns: 0 on success, -1 on failure; @buf is not modified on failure
+ *
+ * Wi-Fi Aware spec R5, Table 155. The attribute header is added by the caller.
+ */
+int nan_pkra_encode(struct wpabuf *buf, const struct nan_pkr *pkrs[],
+		    const u8 *isks[], unsigned int num_pkrs)
+{
+	size_t start;
+	unsigned int i;
+
+	if (!buf || !pkrs || !isks || !num_pkrs || num_pkrs > 255 ||
+	    !wpabuf_tailroom(buf))
+		return -1;
+
+	start = wpabuf_len(buf);
+	wpabuf_put_u8(buf, num_pkrs);
+	for (i = 0; i < num_pkrs; i++) {
+		if (nan_pkr_encode(buf, pkrs[i], isks[i]) < 0) {
+			buf->used = start;
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+
+/**
+ * nan_pkra_parse - Parse the body of a Public Key Record attribute
+ * @data: Attribute body, starting with Number of PKRs
+ * @len: Length of @data
+ * @cb: Called for each record that parses and verifies successfully;
+ *	a negative return value stops parsing
+ * @ctx: Context for @cb
+ * Returns: Number of records passed to @cb, or -1 on malformed input
+ *
+ * Wi-Fi Aware spec R5, Table 155. Records are parsed in place. A record that
+ * fails verification is skipped, but a record whose Length exceeds the
+ * attribute ends parsing, since the following records cannot be located.
+ */
+int nan_pkra_parse(const u8 *data, size_t len,
+		   int (*cb)(void *ctx, const struct nan_pkr *pkr),
+		   void *ctx)
+{
+	struct nan_pkr pkr;
+	const u8 *pos, *end;
+	unsigned int i, num_pkrs;
+	int count = 0, res;
+	size_t rec_len;
+
+	if (!data || !cb || len < 1)
+		return -1;
+
+	num_pkrs = data[0];
+	pos = data + 1;
+	end = data + len;
+	for (i = 0; i < num_pkrs; i++) {
+		if (end - pos < 2 ||
+		    end - pos - 2 < WPA_GET_BE16(pos)) {
+			wpa_printf(MSG_DEBUG, "NAN: PKRA %u truncated", i);
+			return -1;
+		}
+		rec_len = 2 + WPA_GET_BE16(pos);
+		res = nan_pkr_parse(pos, rec_len, &pkr);
+		pos += rec_len;
+		if (res < 0) {
+			wpa_printf(MSG_DEBUG, "NAN: Skip invalid PKRA %u", i);
+			continue;
+		}
+		count++;
+		if (cb(ctx, &pkr) < 0)
+			break;
+	}
+
+	return count;
+}
+
+
+/**
  * nan_nira_get_tag_nonce - Generate NIRA nonce and compute NIRA tag
  * @nan: Pointer to NAN configuration structure
  * @nonce: Buffer to store the generated NIRA nonce (output)
