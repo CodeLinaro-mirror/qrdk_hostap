@@ -4034,21 +4034,26 @@ int nan_add_nik(struct nan_data *nan, const u8 *nik, enum nan_nik_type type,
 }
 
 
+static void nan_free_nik_entry(struct nan_nik_entry *entry)
+{
+	struct nan_assoc_nik_entry *an, *an_tmp;
+
+	dl_list_for_each_safe(an, an_tmp, &entry->associated_nik,
+			      struct nan_assoc_nik_entry, list) {
+		dl_list_del(&an->list);
+		bin_clear_free(an, sizeof(*an));
+	}
+	dl_list_del(&entry->list);
+	bin_clear_free(entry, sizeof(*entry));
+}
+
+
 static void nan_flush_nik_list(struct dl_list *list)
 {
 	struct nan_nik_entry *entry, *tmp;
 
-	dl_list_for_each_safe(entry, tmp, list, struct nan_nik_entry, list) {
-		struct nan_assoc_nik_entry *an, *an_tmp;
-
-		dl_list_for_each_safe(an, an_tmp, &entry->associated_nik,
-				      struct nan_assoc_nik_entry, list) {
-			dl_list_del(&an->list);
-			bin_clear_free(an, sizeof(*an));
-		}
-		dl_list_del(&entry->list);
-		bin_clear_free(entry, sizeof(*entry));
-	}
+	dl_list_for_each_safe(entry, tmp, list, struct nan_nik_entry, list)
+		nan_free_nik_entry(entry);
 }
 
 
