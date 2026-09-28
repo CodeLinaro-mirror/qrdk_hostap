@@ -2890,3 +2890,61 @@ def test_nan_pkbst_generated_record(dev, apdev):
             raise Exception("IPK is not a compressed P-256 point")
         pkbst_config(sub, 1, peer_pkr=blob)
         pkbst_pair(pub, sub, 1, pub_pbm=0x06)
+
+def test_nan_pkbst_pik_verification(dev, apdev):
+    """NAN PKBST pairing setup followed by PIK-based pairing verification"""
+    with hwsim_nan_radios(count=2) as [wpas1, wpas2], \
+         NanDevice(wpas1, "nan0") as pub, NanDevice(wpas2, "nan1") as sub:
+        pkbst_config(pub, 2, self_pkr=PKR_B, self_isk=ISK_B, peer_pkr=PKR_A)
+        pkbst_config(sub, 2, self_pkr=PKR_A, self_isk=ISK_A, peer_pkr=PKR_B)
+        for dev in (pub, sub):
+            dev.set("npk_caching", "1")
+            dev.set("pik_caching", "1")
+            dev.set("pairing_verification", "1")
+        pid, sid = pkbst_discover_bootstrap(pub, sub, 2)
+        run_nan_pairing(sub, pub, pid, sid, "SAE", password="unused")
+        pub.cancel_publish(pid)
+        sub.cancel_subscribe(sid)
+        pub.wpas.dump_monitor()
+        sub.wpas.dump_monitor()
+
+        # Rediscovery with PNTags and verification with the cached NPK
+        pid = pub.publish(SERVICE_NAME, ssi="aabbccee", unsolicited=0)
+        sid = sub.subscribe(SERVICE_NAME, ssi="ddbbccee", active=1)
+        ev = sub.wpas.wait_event(["NAN-DISCOVERY-RESULT"], timeout=5)
+        if ev is None:
+            raise Exception("Rediscovery not seen")
+        pub.wpas.wait_event(["NAN-REPLIED"], timeout=2)
+        run_nan_pairing(sub, pub, pid, sid, "PMK")
+
+def test_nan_pkbst_pik_verification_restart(dev, apdev):
+    """NAN PIK-based pairing verification after NAN restart"""
+    with hwsim_nan_radios(count=2) as [wpas1, wpas2], \
+         NanDevice(wpas1, "nan0") as pub, NanDevice(wpas2, "nan1") as sub:
+        pkbst_config(pub, 1, self_pkr=PKR_A, self_isk=ISK_A)
+        pkbst_config(sub, 1, peer_pkr=PKR_A)
+        for dev in (pub, sub):
+            dev.set("npk_caching", "1")
+            dev.set("pik_caching", "1")
+            dev.set("pairing_verification", "1")
+        pid, sid = pkbst_discover_bootstrap(pub, sub, 1, pub_pbm=0x06)
+        run_nan_pairing(sub, pub, pid, sid, "SAE", password="unused")
+
+        # The pairwise identity is kept across NAN restart
+        for dev in (pub, sub):
+            if "OK" not in dev.wpas.request("NAN_STOP"):
+                raise Exception("NAN_STOP failed")
+            dev.wpas.dump_monitor()
+            if "OK" not in dev.wpas.request("NAN_START"):
+                raise Exception("NAN_START failed")
+            if dev.wpas.wait_event(["NAN-CLUSTER-JOIN"], timeout=5) is None:
+                raise Exception("NAN-CLUSTER-JOIN not seen")
+            if "OK" not in dev.schedule_config((2437, "0e000000")):
+                raise Exception("Failed to configure schedule")
+
+        pid = pub.publish(SERVICE_NAME, ssi="aabbccee", unsolicited=0)
+        sid = sub.subscribe(SERVICE_NAME, ssi="ddbbccee", active=1)
+        if sub.wpas.wait_event(["NAN-DISCOVERY-RESULT"], timeout=5) is None:
+            raise Exception("Rediscovery not seen")
+        pub.wpas.wait_event(["NAN-REPLIED"], timeout=2)
+        run_nan_pairing(sub, pub, pid, sid, "PMK")
