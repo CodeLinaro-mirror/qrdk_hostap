@@ -27,6 +27,28 @@ static int nan_pairing_parse_data_element(void *ctx, const u8 *data,
 					  size_t len);
 
 /**
+ * nan_pairing_is_pkr_usable - Check whether a PKR may be used
+ * @pkr: NAN Pairing Key Record
+ * Returns: true if the record is valid and has not expired
+ */
+bool nan_pairing_is_pkr_usable(const struct nan_pkr *pkr)
+{
+	struct os_reltime now;
+
+	if (!pkr || !pkr->valid ||
+	    (pkr->op_ctrl & NAN_PKR_OP_CTRL_REVOKED) ||
+	    !pkr->valid_duration)
+		return false;
+
+	if (!os_reltime_initialized(&pkr->created_at) ||
+	    os_get_reltime(&now) < 0)
+		return false;
+
+	return !os_reltime_expired(&now, &pkr->created_at,
+				   (os_time_t) pkr->valid_duration * 60);
+}
+
+/**
  * nan_nira_get_tag_nonce - Generate NIRA nonce and compute NIRA tag
  * @nan: Pointer to NAN configuration structure
  * @nonce: Buffer to store the generated NIRA nonce (output)

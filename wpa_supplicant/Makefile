@@ -2014,6 +2014,7 @@ endif
 ifdef CONFIG_NAN
 OBJS += ../src/nan/nan_module_tests.o
 OBJS += ../src/nan/nan_module_test_cases.o
+OBJS += ../src/nan/nan_pkbst_tests.o
 endif
 endif
 

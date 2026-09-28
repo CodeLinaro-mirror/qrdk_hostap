@@ -30,6 +30,8 @@ enum nan_test_ndp_notify_type {
 #define NAN_TEST_MAX_POT_AVAIL 256
 #define NAN_MAX_NUM_NDPS       8
 
+int nan_pkbst_tests(void);
+
 /**
  * nan_test_dev_conf - NAN test device configuration
  * @schedule_cb: Callback to configure different schedule handling policies

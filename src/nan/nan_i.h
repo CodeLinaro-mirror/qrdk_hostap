@@ -25,7 +25,29 @@ struct nan_config;
 #define NAN_TK_MAX_LEN  32
 #define NAN_NPK_LEN  32
 
+#define NAN_IPK_LEN	33	/* Compressed P-256 public key */
+
 #define NAN_ELEMENT_MAX_SIZE 1024
+
+/**
+ * struct nan_pkr - NAN Public Key Record (PKR)
+ * @ipk: Individual Public Key (compressed P-256)
+ * @iik: Individual Identity Key
+ * @op_ctrl: Operation Control bits (NAN_PKR_OP_CTRL_*)
+ * @valid_duration: Valid Duration in minutes (Wi-Fi Aware spec R5, Table 34)
+ * @created_at: Time the record was installed; start of Valid Duration
+ * @valid: Whether this PKR is populated
+ */
+struct nan_pkr {
+	u8 ipk[NAN_IPK_LEN];
+	u8 iik[NAN_IIK_LEN];
+	u16 op_ctrl;
+	u32 valid_duration;
+	struct os_reltime created_at;
+	bool valid;
+};
+
+bool nan_pairing_is_pkr_usable(const struct nan_pkr *pkr);
 
 /**
  * struct nan_ptk - NAN Pairwise Transient Key

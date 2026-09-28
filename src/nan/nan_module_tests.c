@@ -1525,6 +1525,8 @@ int nan_module_tests(void)
 {
 	if (nan_test_crypto())
 		return -1;
+	if (nan_pkbst_tests())
+		return -1;
 
 	return nan_test_run();
 }
