@@ -158,7 +158,7 @@ class NanDevice:
             cmd += " security_required=1"
 
         if extended_pbm:
-            cmd += " extended_pbm=1"
+            cmd += f" extended_pbm={extended_pbm}"
 
         return self.wpas.request(cmd)
 
@@ -236,7 +236,7 @@ class NanDevice:
                   srf_bf_idx=0, close_proximity=0, pbm=0,
                   pairing_setup_info=None, randomized_service_id=0,
                   dp_required=0, dp_type=None, security_required=0,
-                  cipher_suites=None):
+                  cipher_suites=None, extended_pbm=0):
 
         cmd = f"NAN_SUBSCRIBE service_name={service_name} sync={sync} srv_proto_type=2"
 
@@ -284,6 +284,9 @@ class NanDevice:
 
         if cipher_suites is not None:
             cmd += f" cipher_suites={cipher_suites}"
+
+        if extended_pbm:
+            cmd += f" extended_pbm={extended_pbm}"
 
         return self.wpas.request(cmd)
 
