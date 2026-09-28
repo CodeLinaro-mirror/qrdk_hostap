@@ -390,8 +390,9 @@ bool nan_is_naf(const struct ieee80211_mgmt *mgmt, size_t len)
 	subtype = mgmt->u.action.u.naf.subtype;
 
 	if (mgmt->u.action.category != WLAN_ACTION_PUBLIC &&
-	    !(subtype >= NAN_SUBTYPE_DATA_PATH_REQUEST &&
-	      subtype <= NAN_SUBTYPE_DATA_PATH_TERMINATION &&
+	    !(((subtype >= NAN_SUBTYPE_DATA_PATH_REQUEST &&
+		subtype <= NAN_SUBTYPE_DATA_PATH_TERMINATION) ||
+	       subtype == NAN_SUBTYPE_PROTECTED_TRANSPORT) &&
 	      mgmt->u.action.category == WLAN_ACTION_PROTECTED_DUAL)) {
 		wpa_printf(MSG_DEBUG, "NAN: Invalid action category for NAF");
 		return false;

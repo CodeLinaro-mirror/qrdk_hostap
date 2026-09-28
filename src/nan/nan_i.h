@@ -855,6 +855,8 @@ void nan_pairing_add_peer(struct nan_data *nan, struct nan_peer *peer);
 int nan_irsa_get_peer_pkbst_tags(struct nan_data *nan, struct nan_peer *peer,
 				 u8 *irsa_nonce, u8 **irsa_tag_tlv,
 				 u16 *irsa_tag_tlv_len);
+int nan_pairing_rx_pt(struct nan_data *nan, struct nan_peer *peer,
+		      const struct ieee80211_mgmt *mgmt, size_t len);
 bool nan_is_naf(const struct ieee80211_mgmt *mgmt, size_t len);
 int nan_parse_attrs(struct nan_data *nan, const u8 *data, size_t len,
 		    struct nan_attrs *attrs);

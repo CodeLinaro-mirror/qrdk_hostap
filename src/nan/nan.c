@@ -2575,6 +2575,9 @@ int nan_action_rx(struct nan_data *nan, const struct ieee80211_mgmt *mgmt,
 	case NAN_SUBTYPE_SCHEDULE_UPDATE_NOTIF:
 		ret = 0;
 		goto done;
+	case NAN_SUBTYPE_PROTECTED_TRANSPORT:
+		ret = nan_pairing_rx_pt(nan, peer, mgmt, len);
+		goto done;
 	default:
 		ret = -1;
 		goto done;

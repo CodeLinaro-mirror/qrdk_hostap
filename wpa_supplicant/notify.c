@@ -1392,6 +1392,19 @@ void wpas_notify_nan_pairing_request(struct wpa_supplicant *wpa_s,
 		       verify);
 }
 
+
+void wpas_notify_nan_pkr_update(struct wpa_supplicant *wpa_s,
+				const u8 *peer_nmi, const u8 *iik,
+				bool revoked)
+{
+	char iik_hex[2 * NAN_IIK_LEN + 1];
+
+	wpa_snprintf_hex(iik_hex, sizeof(iik_hex), iik, NAN_IIK_LEN);
+	wpa_msg_global(wpa_s, MSG_INFO, NAN_PKR_UPDATE "addr=" MACSTR
+		       " iik=%s revoked=%d",
+		       MAC2STR(peer_nmi), iik_hex, revoked);
+}
+
 #endif /* CONFIG_PASN */
 
 

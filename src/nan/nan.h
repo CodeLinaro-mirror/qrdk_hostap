@@ -612,6 +612,16 @@ struct nan_config {
 			const u8 *cluster_id, struct wpabuf *buf);
 
 	/**
+	 * pkr_updated - Report a Public Key Record received from a peer
+	 * @ctx: Callback context from cb_ctx
+	 * @peer_nmi: NMI address of the peer
+	 * @iik: IIK of the record
+	 * @revoked: Whether the peer revoked the record
+	 */
+	void (*pkr_updated)(void *ctx, const u8 *peer_nmi, const u8 *iik,
+			    bool revoked);
+
+	/**
 	 * is_valid_publish_id - Check if a publish instance ID is valid
 	 * @ctx: Callback context from cb_ctx
 	 * @instance_id: The instance ID to check

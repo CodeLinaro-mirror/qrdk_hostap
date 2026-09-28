@@ -3216,3 +3216,158 @@ void nan_pairing_store_sae_pmkid(struct nan_data *nan_data, const u8 *addr)
 		   "NAN: Pairing: Stored SAE PMKID for " MACSTR,
 		   MAC2STR(addr));
 }
+
+
+/* Category, Action, OUI, OUI Type and OUI Subtype of a NAF */
+#define NAN_PT_HDR_LEN (1 + 1 + 3 + 1 + 1)
+
+
+/* First attribute with @id in a list of NAN attributes */
+static const u8 * nan_pairing_find_attr(const u8 *pos, size_t len, u8 id)
+{
+	const u8 *end = pos + len;
+
+	while (end - pos >= NAN_ATTR_HDR_LEN) {
+		u16 attr_len = WPA_GET_LE16(pos + 1);
+
+		if (end - pos - NAN_ATTR_HDR_LEN < attr_len)
+			return NULL;
+		if (pos[0] == id)
+			return pos;
+		pos += NAN_ATTR_HDR_LEN + attr_len;
+	}
+	return NULL;
+}
+
+
+struct nan_pt_rx {
+	struct nan_data *nan;
+	struct nan_peer *peer;
+	unsigned int accepted;
+};
+
+
+/*
+ * Wi-Fi Aware spec R5 draft v0.0.16, section 7.6.8: a revoked record asks the
+ * recipient to delete the stored record with the same IPK and IIK; otherwise
+ * the record replaces the one held for the peer.
+ */
+static int nan_pairing_rx_pt_pkr(void *ctx, const struct nan_pkr *pkr)
+{
+	struct nan_pt_rx *rx = ctx;
+	struct nan_peer *peer = rx->peer;
+	bool revoked = !!(pkr->op_ctrl & NAN_PKR_OP_CTRL_REVOKED);
+
+	if (revoked) {
+		if (!peer->peer_pkr.valid ||
+		    os_memcmp(peer->peer_pkr.ipk, pkr->ipk, NAN_IPK_LEN) != 0 ||
+		    os_memcmp(peer->peer_pkr.iik, pkr->iik, NAN_IIK_LEN) != 0)
+			return 0;
+		nan_remove_nik(rx->nan, peer->peer_pkr.iik, NAN_NIK_TYPE_PEER);
+		os_memset(&peer->peer_pkr, 0, sizeof(peer->peer_pkr));
+		wpa_printf(MSG_DEBUG, "NAN: PT: Peer PKR revoked");
+	} else {
+		if (!nan_pairing_is_pkr_usable(pkr))
+			return 0;
+		nan_pairing_store_peer_pkr(rx->nan, &peer->peer_pkr, pkr);
+		wpa_printf(MSG_DEBUG, "NAN: PT: Peer PKR updated");
+	}
+
+	rx->accepted++;
+	if (rx->nan->cfg->pkr_updated)
+		rx->nan->cfg->pkr_updated(rx->nan->cfg->cb_ctx, peer->nmi_addr,
+					  pkr->iik, revoked);
+	return 0;
+}
+
+
+static void nan_pairing_send_pt_response(struct nan_data *nan,
+					 struct nan_peer *peer, u8 token,
+					 u8 status)
+{
+	struct wpabuf *buf;
+
+	if (!nan->cfg->send_naf)
+		return;
+	buf = wpabuf_alloc(NAN_PT_HDR_LEN + NAN_ATTR_HDR_LEN + 3);
+	if (!buf)
+		return;
+
+	wpabuf_put_u8(buf, WLAN_ACTION_PROTECTED_DUAL);
+	wpabuf_put_u8(buf, WLAN_PA_VENDOR_SPECIFIC);
+	wpabuf_put_be24(buf, OUI_WFA);
+	wpabuf_put_u8(buf, NAN_NAF_OUI_TYPE);
+	wpabuf_put_u8(buf, NAN_SUBTYPE_PROTECTED_TRANSPORT);
+	wpabuf_put_u8(buf, NAN_ATTR_PTA);
+	wpabuf_put_le16(buf, 3);
+	wpabuf_put_u8(buf, token);
+	wpabuf_put_u8(buf, 0); /* Attribute Control: no list of PT-TLVs */
+	wpabuf_put_u8(buf, NAN_PTA_TYPE_RESPONSE |
+		      (status << NAN_PTA_STATUS_SHIFT));
+	nan->cfg->send_naf(nan->cfg->cb_ctx, peer->nmi_addr, NULL,
+			   nan->cluster_id, buf);
+	wpabuf_free(buf);
+}
+
+
+/**
+ * nan_pairing_rx_pt - Process a received Protected Transport NAF
+ * @nan: NAN data
+ * @peer: Sending peer
+ * @mgmt: Received frame; only protected frames reach this function
+ * @len: Length of @mgmt
+ * Returns: 0 on success, -1 on failure
+ *
+ * Wi-Fi Aware spec R5 draft v0.0.16, section 7.6.8 and Table 156: a request
+ * carries a PTA with a nonzero Dialog Token and may carry a PKRA. Records are
+ * accepted only from paired peers, and the request is answered with a
+ * response PTA echoing the Dialog Token.
+ */
+int nan_pairing_rx_pt(struct nan_data *nan, struct nan_peer *peer,
+		      const struct ieee80211_mgmt *mgmt, size_t len)
+{
+	const u8 *attrs = mgmt->u.action.u.naf.variable;
+	size_t attrs_len = len - IEEE80211_MIN_ACTION_LEN(naf);
+	const u8 *pta, *pkra;
+	struct nan_pt_rx rx;
+	u8 token, type;
+
+	pta = nan_pairing_find_attr(attrs, attrs_len, NAN_ATTR_PTA);
+	if (!pta || WPA_GET_LE16(pta + 1) < 3) {
+		wpa_printf(MSG_DEBUG, "NAN: PT: Missing or invalid PTA");
+		return -1;
+	}
+	token = pta[3];
+	type = pta[5] & NAN_PTA_TYPE_MASK;
+
+	if (type == NAN_PTA_TYPE_RESPONSE) {
+		wpa_printf(MSG_DEBUG, "NAN: PT: Response (token %u status %u)",
+			   token, pta[5] >> NAN_PTA_STATUS_SHIFT);
+		return 0;
+	}
+	if (type != NAN_PTA_TYPE_REQUEST || !token) {
+		wpa_printf(MSG_DEBUG, "NAN: PT: Unsupported PTA");
+		return -1;
+	}
+
+	if (!nan_pairing_is_peer_paired(nan, peer->nmi_addr)) {
+		wpa_printf(MSG_DEBUG, "NAN: PT: Peer not paired");
+		nan_pairing_send_pt_response(nan, peer, token,
+					     NAN_PTA_STATUS_REJECTED);
+		return -1;
+	}
+
+	os_memset(&rx, 0, sizeof(rx));
+	rx.nan = nan;
+	rx.peer = peer;
+	pkra = nan_pairing_find_attr(attrs, attrs_len, NAN_ATTR_PKRA);
+	if (pkra)
+		nan_pkra_parse(pkra + NAN_ATTR_HDR_LEN, WPA_GET_LE16(pkra + 1),
+			       nan_pairing_rx_pt_pkr, &rx);
+
+	nan_pairing_send_pt_response(nan, peer, token,
+				     !pkra || rx.accepted ?
+				     NAN_PTA_STATUS_ACCEPTED :
+				     NAN_PTA_STATUS_REJECTED);
+	return 0;
+}
