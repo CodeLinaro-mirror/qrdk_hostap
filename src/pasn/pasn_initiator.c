@@ -1733,6 +1733,12 @@ int wpa_pasn_auth_rx(struct pasn_data *pasn, const u8 *data, size_t len,
 		return 2;
 	}
 
+	if (pasn->verify_auth2 &&
+	    pasn->verify_auth2(pasn->cb_ctx, pasn->peer_addr)) {
+		wpa_printf(MSG_DEBUG, "PASN: Auth 2 rejected by the caller");
+		goto fail;
+	}
+
 	frame = wpas_pasn_build_auth_3(pasn, true);
 	if (!frame) {
 		wpa_printf(MSG_DEBUG, "PASN: Failed building 3rd auth frame");

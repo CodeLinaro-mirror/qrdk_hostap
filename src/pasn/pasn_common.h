@@ -213,6 +213,18 @@ struct pasn_data {
 	int (*prepare_data_element)(void *ctx, const u8 *peer_addr);
 
 	int (*parse_data_element)(void *ctx, const u8 *data, size_t len);
+
+	/**
+	 * verify_auth2 - Additional validation of auth 2 before auth 3 is sent
+	 * @ctx: Callback context from cb_ctx
+	 * @peer_addr: MAC address of the responder
+	 * Returns: 0 to continue, or non-zero to abort the exchange
+	 *
+	 * Called by the initiator after auth 2, including SAE, has been
+	 * processed, so that the caller can authenticate elements of auth 2
+	 * using the SAE state before confirming the exchange.
+	 */
+	int (*verify_auth2)(void *ctx, const u8 *peer_addr);
 #ifdef CONFIG_ENC_ASSOC
 	int (*eppke_set_key)(void *ctx, enum wpa_alg alg, const u8 *addr,
 			     int vlan_id, const u8 *key, size_t key_len);
