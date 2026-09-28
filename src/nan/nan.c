@@ -4265,6 +4265,42 @@ static size_t nan_irsa_nik_tags(struct nan_data *nan, const u8 *irsa_nonce,
 }
 
 
+/*
+ * Wi-Fi Aware spec R5, Table 25: a device identifies itself to its paired peers
+ * with PNTags derived from the PIKs established with them. One tag is added
+ * per cached PIK, in cache order.
+ */
+static size_t nan_irsa_pntags(struct nan_data *nan, const u8 *irsa_nonce,
+			      u8 **pos)
+{
+	unsigned int i, count;
+	struct wpabuf *tag;
+
+	count = nan->pik_cache ? nan->pik_cache->count : 0;
+	if (count > 255)
+		count = 255;
+	if (!count || !pos)
+		return count ? 2 + count * NAN_NIRA_TAG_LEN : 0;
+
+	(*pos)[0] = NAN_TAG_TYPE_PN;
+	(*pos)[1] = count;
+	*pos += 2;
+	for (i = 0; i < count; i++) {
+		tag = nan_crypto_derive_irsa_tag(nan->pik_cache->entries[i].pik,
+						 NAN_PIK_LEN,
+						 nan->cfg->nmi_addr,
+						 irsa_nonce);
+		if (tag)
+			os_memcpy(*pos, wpabuf_head(tag), NAN_NIRA_TAG_LEN);
+		else
+			os_memset(*pos, 0, NAN_NIRA_TAG_LEN);
+		wpabuf_free(tag);
+		*pos += NAN_NIRA_TAG_LEN;
+	}
+	return 2 + count * NAN_NIRA_TAG_LEN;
+}
+
+
 /* Tag TLV holding a single NAN Tag derived from an IIK */
 static size_t nan_irsa_iik_tag(struct nan_data *nan, const u8 *iik,
 			       enum nan_tag_type type, const u8 *irsa_nonce,
@@ -4443,6 +4479,7 @@ int nan_irsa_get_nonce_tag_tlv(struct nan_data *nan, u8 *irsa_nonce,
 						NULL);
 	else
 		total_len = nan_irsa_nik_tags(nan, irsa_nonce, NULL);
+	total_len += nan_irsa_pntags(nan, irsa_nonce, NULL);
 	if (total_len == 0 || total_len > 65535)
 		return 0;
 
@@ -4455,6 +4492,7 @@ int nan_irsa_get_nonce_tag_tlv(struct nan_data *nan, u8 *irsa_nonce,
 		nan_irsa_pkbst_tags(nan, is_publisher, irsa_nonce, &pos);
 	else
 		nan_irsa_nik_tags(nan, irsa_nonce, &pos);
+	nan_irsa_pntags(nan, irsa_nonce, &pos);
 	if ((size_t) (pos - *irsa_tag_tlv) != total_len) {
 		os_free(*irsa_tag_tlv);
 		*irsa_tag_tlv = NULL;
@@ -4539,6 +4577,25 @@ void nan_rsia_get_rsids(struct nan_data *nan, const u8 *service_id,
 		case NAN_TAG_TYPE_GN:
 			nik_list = &nan->group_nik_list;
 			break;
+		case NAN_TAG_TYPE_PN:
+			/* PNTags follow the order of the PIK cache */
+			for (i = 0; i < count && nan->pik_cache &&
+				     (unsigned int) i < nan->pik_cache->count;
+			     i++) {
+				os_memcpy(data + NAN_SERVICE_ID_LEN,
+					  tags + i * NAN_NIRA_TAG_LEN,
+					  NAN_NIRA_TAG_LEN);
+				if (siphash_2_4(nan->pik_cache->entries[i].pik,
+						data, sizeof(data), hash) < 0)
+					continue;
+				os_memcpy(out_pos, hash, NAN_RSID_LEN);
+				if (has_zero_rsid &&
+				    os_memcmp(out_pos, zero_rsid,
+					      NAN_RSID_LEN) == 0)
+					*has_zero_rsid = true;
+				out_pos += NAN_RSID_LEN;
+			}
+			continue;
 		default:
 			wpa_printf(MSG_DEBUG, "NAN: Unknown NIK type %d", type);
 			continue;
