@@ -1083,6 +1083,48 @@ static void nan_pairing_add_pkbst_irsa(struct nan_data *nan,
 
 
 /*
+ * Wi-Fi Aware spec R5, section 7.6.4: when both devices support NPK/PIK
+ * caching, they derive a pairwise PIK after pairing setup instead of exchanging
+ * NIKs. Cache it with the NPK so that the peer can be rediscovered and pairing
+ * verified with it later. Pairing verification keeps the cached entry.
+ */
+static void nan_pairing_cache_pik(struct nan_data *nan, struct nan_peer *peer)
+{
+	struct pasn_data *pasn = peer->pairing.pasn;
+	const struct nan_pik_cache_entry *cached_pik = NULL;
+	bool initiator =
+		peer->pairing.self_pairing_role == NAN_PAIRING_ROLE_INITIATOR;
+	u8 pik[NAN_PIK_LEN];
+
+	if (nan->pik_cache)
+		cached_pik = nan_pik_cache_get(nan->pik_cache, peer->nmi_addr);
+
+	/*
+	 * Derive a PIK only after successful pairing setup. Pairing
+	 * verification reuses the cached PIK and must not replace it.
+	 */
+	if (!nan->pik_cache || !nan->cfg->pairing_cfg.pik_caching ||
+	    !peer->pairing.pairing_cfg.pik_caching ||
+	    peer->bootstrap.pkbst_mode == NAN_PKBST_MODE_NONE ||
+	    cached_pik ||
+	    (peer->pairing.flags & NAN_PAIRING_FLAG_NPK_VERIFICATION) ||
+	    (pasn_get_akmp(pasn) == WPA_KEY_MGMT_SAE && !pasn->sae.tmp) ||
+	    !pasn->ptk.kdk_len || !pasn->pmk_len)
+		return;
+
+	if (nan_crypto_derive_pik(pasn->ptk.kdk, pasn->ptk.kdk_len,
+				  initiator ? nan->cfg->nmi_addr :
+				  peer->nmi_addr,
+				  initiator ? peer->nmi_addr :
+				  nan->cfg->nmi_addr, pik) == 0)
+		nan_pik_cache_add(nan->pik_cache, peer->nmi_addr, pik,
+				  pasn->pmk, pasn->pmk_len,
+				  pasn_get_akmp(pasn));
+	forced_memzero(pik, sizeof(pik));
+}
+
+
+/*
  * nan_pairing_prepare_pasn_elems - Prepare NAN element for pairing PASN frames
  * @nan_data: Pointer to NAN data structure
  * @peer: Pointer to NAN peer structure
@@ -1313,6 +1355,7 @@ static void nan_pairing_done(struct nan_data *nan_data, struct nan_peer *peer)
 	peer->pairing.pairing_csid = cipher == WPA_CIPHER_GCMP_256 ?
 		NAN_CS_PK_PASN_256 : NAN_CS_PK_PASN_128;
 	peer->pairing.pairing_akmp = pasn_get_akmp(pasn);
+	nan_pairing_cache_pik(nan_data, peer);
 
 	if (!nan_data->cfg->pairing_cfg.npk_caching ||
 	    !peer->pairing.pairing_cfg.npk_caching ||
