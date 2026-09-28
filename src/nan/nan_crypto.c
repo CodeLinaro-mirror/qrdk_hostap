@@ -940,3 +940,89 @@ struct wpabuf * nan_crypto_derive_irsa_tag(const u8 *nik, size_t nik_len,
 	forced_memzero(tag, sizeof(tag));
 	return tag_buf;
 }
+
+
+/*
+ * DER prefix of an RFC 5480 SubjectPublicKeyInfo for a P-256 public key in
+ * compressed point format:
+ *   SEQUENCE {
+ *     SEQUENCE {
+ *       OID id-ecPublicKey (1.2.840.10045.2.1),
+ *       OID secp256r1 (1.2.840.10045.3.1.7)
+ *     },
+ *     BIT STRING (34 octets, 0 unused bits)
+ *   }
+ *
+ * The 33-octet compressed IPK (Wi-Fi Aware spec R5, Table 36) follows as the
+ * BIT STRING value.
+ */
+static const u8 nan_ipk_spki_prefix[NAN_IPK_SPKI_PREFIX_LEN] = {
+	0x30, 0x39,
+	0x30, 0x13,
+	0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01,
+	0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07,
+	0x03, 0x22, 0x00,
+};
+
+
+static struct crypto_ec_key * nan_crypto_load_ipk(const u8 *ipk)
+{
+	u8 spki[NAN_IPK_SPKI_PREFIX_LEN + NAN_IPK_LEN];
+
+	os_memcpy(spki, nan_ipk_spki_prefix, NAN_IPK_SPKI_PREFIX_LEN);
+	os_memcpy(spki + NAN_IPK_SPKI_PREFIX_LEN, ipk, NAN_IPK_LEN);
+
+	return crypto_ec_key_parse_pub(spki, sizeof(spki));
+}
+
+
+/**
+ * nan_crypto_verify_pkr_signature - Verify a PKR signature
+ * @ipk: Compressed P-256 Individual Public Key
+ * @data: Record after the Length field up to the Record Signature
+ * @data_len: Length of @data
+ * @sig: DER-encoded ECDSA Record Signature
+ * @sig_len: Length of @sig
+ *
+ * The record data covers the fields after Length and excludes Record
+ * Signature, as specified by Wi-Fi Aware spec R5, Table 34.
+ *
+ * Returns: 0 if the signature is valid, -1 otherwise
+ */
+int nan_crypto_verify_pkr_signature(const u8 *ipk,
+				    const u8 *data, size_t data_len,
+				    const u8 *sig, size_t sig_len)
+{
+	struct crypto_ec_key *key = NULL;
+	u8 digest[SHA256_MAC_LEN];
+	int ret = -1;
+
+	if (!ipk || !data || !data_len || !sig || !sig_len) {
+		wpa_printf(MSG_DEBUG,
+			   "NAN: PKR signature verify: invalid parameters");
+		return -1;
+	}
+
+	if (nan_crypto_sha256(data, data_len, digest) < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "NAN: PKR signature verify: SHA-256 failed");
+		goto out;
+	}
+
+	key = nan_crypto_load_ipk(ipk);
+	if (!key) {
+		wpa_printf(MSG_DEBUG,
+			   "NAN: PKR signature verify: failed to load IPK");
+		goto out;
+	}
+
+	ret = crypto_ec_key_verify_signature(key, digest, sizeof(digest), sig,
+					     sig_len) == 1 ? 0 : -1;
+	if (ret)
+		wpa_printf(MSG_DEBUG,
+			   "NAN: PKR signature verify: invalid");
+
+out:
+	crypto_ec_key_deinit(key);
+	return ret;
+}

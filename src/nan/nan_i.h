@@ -26,6 +26,8 @@ struct nan_config;
 #define NAN_NPK_LEN  32
 
 #define NAN_IPK_LEN	33	/* Compressed P-256 public key */
+/* RFC 5480 SubjectPublicKeyInfo DER prefix for a compressed P-256 key */
+#define NAN_IPK_SPKI_PREFIX_LEN	26
 
 #define NAN_ELEMENT_MAX_SIZE 1024
 
@@ -864,6 +866,9 @@ int nan_crypto_calc_auth_token(enum nan_cipher_suite_id cipher,
 			       const u8 *buf, size_t len, u8 *token);
 int nan_crypto_key_mic(const u8 *buf, size_t len, const u8 *kck,
 		       size_t kck_len, u8 cipher, u8 *mic);
+int nan_crypto_verify_pkr_signature(const u8 *ipk,
+				    const u8 *data, size_t data_len,
+				    const u8 *sig, size_t sig_len);
 int nan_crypto_derive_npk(const u8 *kdk, size_t kdk_len,
 			  enum nan_cipher_suite_id cipher,
 			  const u8 *initiator_nmi, const u8 *responder_nmi,
