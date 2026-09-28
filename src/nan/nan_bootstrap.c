@@ -109,7 +109,8 @@ static struct wpabuf * nan_bootstrap_build_npba(struct nan_data *nan,
 
 	if (peer->bootstrap.initiator) {
 		type_and_status = NAN_PBA_TYPE_RESPONSE;
-		if (peer->bootstrap.status)
+		/* With PKBST, the method is carried in PBEA only */
+		if (peer->bootstrap.status || peer->bootstrap.extended_pbm)
 			pbm = 0;
 	} else {
 		type_and_status = NAN_PBA_TYPE_REQUEST;
@@ -144,7 +145,7 @@ static struct wpabuf * nan_bootstrap_build_npba(struct nan_data *nan,
 static struct wpabuf * nan_bootstrap_build_pbea(struct nan_data *nan,
 					       int handle)
 {
-	u16 extended_pbm = 0;
+	u16 extended_pbm = nan->cfg->pairing_cfg.extended_pkbst_method;
 	const u8 *pairing_setup_info = NULL;
 	u16 pairing_setup_info_len = 0;
 
