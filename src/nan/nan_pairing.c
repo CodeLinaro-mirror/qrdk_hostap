@@ -536,14 +536,14 @@ static bool nan_pairing_is_supported(struct nan_data *nan_data,
 
 
 static int nan_pairing_set_password(struct pasn_data *pasn,
-				    const char *passphrase)
+				    const u8 *password, size_t password_len)
 {
 #ifdef CONFIG_SAE
 	struct sae_pt *pt;
 
 	pt = sae_derive_pt(pasn->pasn_groups, (const u8 *) NAN_PASN_SSID,
-			   os_strlen(NAN_PASN_SSID), (const u8 *) passphrase,
-			   os_strlen(passphrase), NULL, 0);
+			   os_strlen(NAN_PASN_SSID), password, password_len,
+			   NULL, 0);
 	if (pasn_set_pt(pasn, pt) < 0) {
 		wpa_printf(MSG_INFO, "NAN: Pairing: Failed to set SAE pt");
 		sae_deinit_pt(pt);
@@ -554,6 +554,51 @@ static int nan_pairing_set_password(struct pasn_data *pasn,
 #else  /* CONFIG_SAE */
 	return -1;
 #endif /* CONFIG_SAE */
+}
+
+
+/*
+ * Wi-Fi Aware spec R5, section 7.6.8 and Table 35: with PKBST, the SAE password
+ * is derived from the publisher's (Pairing Responder's) IPK and, in mutual
+ * PKBST, also the subscriber's (Pairing Initiator's) IPK.
+ *
+ * Returns 1 if the password was derived, 0 if PKBST is not used with the peer,
+ * or -1 if PKBST was negotiated but the records needed for it are not
+ * available. There is no fallback to a configured password in that case.
+ */
+static int nan_pairing_pkbst_password(struct nan_data *nan,
+				      struct nan_peer *peer,
+				      enum nan_pairing_role self_role,
+				      u8 *password)
+{
+	bool responder = self_role == NAN_PAIRING_ROLE_RESPONDER;
+	bool mutual = peer->bootstrap.pkbst_mode == NAN_PKBST_MODE_MUTUAL;
+	const struct nan_pkr *pub, *sub;
+	const u8 *init_nmi, *resp_nmi;
+
+	if (peer->bootstrap.pkbst_mode == NAN_PKBST_MODE_NONE)
+		return 0;
+
+	pub = responder ? &nan->self_pkr : &peer->peer_pkr;
+	sub = responder ? &peer->peer_pkr : &nan->self_pkr;
+	if (!nan_pairing_is_pkr_usable(pub) ||
+	    (mutual && !nan_pairing_is_pkr_usable(sub))) {
+		wpa_printf(MSG_INFO,
+			   "NAN: Pairing: PKBST records not available");
+		return -1;
+	}
+
+	init_nmi = responder ? peer->nmi_addr : nan->cfg->nmi_addr;
+	resp_nmi = responder ? nan->cfg->nmi_addr : peer->nmi_addr;
+	if (nan_crypto_derive_pkbst_password(pub->ipk,
+					     mutual ? sub->ipk : NULL,
+					     init_nmi, resp_nmi,
+					     password) < 0)
+		return -1;
+
+	wpa_printf(MSG_DEBUG, "NAN: Pairing: Using %s PKBST password",
+		   mutual ? "mutual" : "one-way");
+	return 1;
 }
 
 
@@ -773,14 +818,28 @@ static int nan_pairing_pasn_initialize(struct nan_data *nan_data,
 	pasn->pasn_groups[0] = pasn->group;
 
 	if (auth_mode == NAN_PASN_AUTH_MODE_SAE) {
+		u8 pkbst_pw[NAN_PKBST_PASSWORD_LEN];
+		int res;
+
 		pasn_set_akmp(pasn, WPA_KEY_MGMT_SAE);
-		if (!password) {
+		res = nan_pairing_pkbst_password(nan_data, peer, self_role,
+						 pkbst_pw);
+		if (res < 0)
+			goto fail;
+		if (res > 0) {
+			res = nan_pairing_set_password(pasn, pkbst_pw,
+						       sizeof(pkbst_pw));
+			forced_memzero(pkbst_pw, sizeof(pkbst_pw));
+		} else if (password) {
+			res = nan_pairing_set_password(pasn,
+						       (const u8 *) password,
+						       os_strlen(password));
+		} else {
 			wpa_printf(MSG_INFO,
 				   "NAN: Pairing: Password not available");
 			goto fail;
 		}
-
-		if (nan_pairing_set_password(pasn, password) < 0) {
+		if (res < 0) {
 			wpa_printf(MSG_INFO,
 				   "NAN: Pairing: Failed to set password");
 			goto fail;
