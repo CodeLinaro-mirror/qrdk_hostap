@@ -4121,6 +4121,15 @@ static void wpas_nan_de_add_extra_attrs(void *ctx, struct wpabuf *buf)
 }
 
 
+static bool wpas_nan_resolve_pntag(void *ctx, const u8 *peer_addr,
+				   const u8 *nonce, const u8 *tag, u8 *pik)
+{
+	struct wpa_supplicant *wpa_s = ctx;
+
+	return nan_pik_resolve_tag(wpa_s->nan, peer_addr, nonce, tag, pik);
+}
+
+
 static int wpas_irsa_get_nonce_tag_tlv(void *ctx, u8 *irsa_nonce,
 				       u8 **irsa_tag_tlv,
 				       u16 *irsa_tag_tlv_len, bool is_publisher)
@@ -5101,6 +5110,7 @@ int wpas_nan_de_init(struct wpa_supplicant *wpa_s)
 #ifdef CONFIG_NAN
 	cb.add_extra_attrs = wpas_nan_de_add_extra_attrs;
 	cb.irsa_get_nonce_tag_tlv = wpas_irsa_get_nonce_tag_tlv;
+	cb.resolve_pntag = wpas_nan_resolve_pntag;
 	cb.rsia_get_rsids = wpas_rsia_get_rsids;
 	cb.get_nik_list = wpas_nan_de_get_nik_list;
 #ifdef CONFIG_PASN

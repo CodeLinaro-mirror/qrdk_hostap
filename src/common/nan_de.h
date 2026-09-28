@@ -86,6 +86,18 @@ struct nan_callbacks {
 			       bool is_unicast, bool *has_zero_rsid);
 	struct dl_list * (*get_nik_list)(void *ctx, u8 tag_type);
 
+	/**
+	 * resolve_pntag - Resolve a Pairing NAN Tag of a paired peer
+	 * @ctx: Callback context
+	 * @peer_addr: NMI address the tag was derived with
+	 * @nonce: Nonce from the IRSA
+	 * @tag: Received NAN Tag
+	 * @pik: Buffer for the matching Pairwise Identity Key
+	 * Returns: true if a cached PIK produced @tag
+	 */
+	bool (*resolve_pntag)(void *ctx, const u8 *peer_addr, const u8 *nonce,
+			      const u8 *tag, u8 *pik);
+
 	int (*irsa_get_nonce_tag_tlv)(void *ctx, u8 *irsa_nonce,
 				      u8 **irsa_tag_tlv, u16 *irsa_tag_tlv_len,
 				      bool is_publisher);

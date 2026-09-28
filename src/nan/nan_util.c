@@ -2250,3 +2250,44 @@ void nan_set_pik_cache(struct nan_data *nan, struct nan_pik_cache *cache)
 	if (nan)
 		nan->pik_cache = cache;
 }
+
+
+/**
+ * nan_pik_resolve_tag - Resolve a Pairing NAN Tag with the cached PIKs
+ * @nan: NAN data
+ * @peer_addr: NMI address the tag was derived with
+ * @nonce: Nonce from the IRSA
+ * @tag: Received NAN Tag
+ * @pik: Buffer for the matching Pairwise Identity Key
+ * Returns: true if a cached PIK produced @tag
+ *
+ * Wi-Fi Aware R5 Table 25: a PNTag is resolved by iterating the PIKs
+ * established with all paired peers.
+ */
+bool nan_pik_resolve_tag(struct nan_data *nan, const u8 *peer_addr,
+			 const u8 *nonce, const u8 *tag, u8 *pik)
+{
+	struct wpabuf *comp;
+	size_t i;
+	bool match = false;
+
+	if (!nan || !nan->pik_cache || !peer_addr || !nonce || !tag || !pik)
+		return false;
+
+	for (i = 0; i < nan->pik_cache->count && !match; i++) {
+		const u8 *cached = nan->pik_cache->entries[i].pik;
+
+		comp = nan_crypto_derive_irsa_tag(cached, NAN_PIK_LEN,
+						  peer_addr, nonce);
+		if (!comp)
+			continue;
+		if (os_memcmp_const(wpabuf_head(comp), tag,
+				    NAN_NIRA_TAG_LEN) == 0) {
+			os_memcpy(pik, cached, NAN_PIK_LEN);
+			match = true;
+		}
+		wpabuf_free(comp);
+	}
+
+	return match;
+}

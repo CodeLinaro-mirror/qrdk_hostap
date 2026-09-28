@@ -1022,6 +1022,8 @@ int nan_pairing_send_pkr_update(struct nan_data *nan, struct nan_peer *peer,
 struct nan_pik_cache * nan_pik_cache_init(unsigned int max_entries);
 void nan_pik_cache_deinit(struct nan_pik_cache *cache);
 void nan_set_pik_cache(struct nan_data *nan, struct nan_pik_cache *cache);
+bool nan_pik_resolve_tag(struct nan_data *nan, const u8 *peer_addr,
+			 const u8 *nonce, const u8 *tag, u8 *pik);
 int nan_pairing_set_pik_caching(struct nan_data *nan, bool value);
 bool nan_pairing_is_peer_paired(struct nan_data *nan_data, const u8 *peer_addr);
 int nan_pairing_abort(struct nan_data *nan_data, const u8 *peer_addr);
