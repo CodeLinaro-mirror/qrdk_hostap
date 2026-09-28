@@ -104,6 +104,87 @@ out:
 
 
 /**
+ * nan_pkr_parse - Parse and verify a received Public Key Record
+ * @data: Record, starting with its Length field
+ * @len: Number of octets available at @data
+ * @pkr: Buffer for the parsed record; modified only on success
+ * Returns: Number of octets consumed on success, -1 on failure
+ *
+ * Wi-Fi Aware spec R5, Table 34 and Table 35. The Record Signature is mandatory
+ * and is verified with the IPK carried in the record.
+ */
+int nan_pkr_parse(const u8 *data, size_t len, struct nan_pkr *pkr)
+{
+	struct nan_pkr tmp;
+	const u8 *pos, *end, *signed_start;
+	u8 conf;
+	size_t rec_len;
+
+	if (!data || !pkr || len < 2)
+		return -1;
+	rec_len = WPA_GET_BE16(data);
+	if (rec_len > len - 2) {
+		wpa_printf(MSG_DEBUG, "NAN: Truncated PKR (%zu > %zu)",
+			   rec_len, len - 2);
+		return -1;
+	}
+
+	os_memset(&tmp, 0, sizeof(tmp));
+	pos = data + 2;
+	signed_start = pos;
+	end = pos + rec_len;
+
+	if (end - pos < 1 + 3 + 1 + NAN_IPK_LEN + NAN_IIK_LEN + 4) {
+		wpa_printf(MSG_DEBUG, "NAN: PKR too short (%zu)", rec_len);
+		return -1;
+	}
+	if (pos[0] != NAN_PKR_VERSION || pos[4] != NAN_PKR_CIPHER_VERSION_0) {
+		wpa_printf(MSG_DEBUG,
+			   "NAN: Unsupported PKR version %u / cipher version %u",
+			   pos[0], pos[4]);
+		return -1;
+	}
+	pos++;
+	conf = *pos++;
+	tmp.op_ctrl = WPA_GET_BE16(pos);
+	pos += 2 + 1;
+	os_memcpy(tmp.ipk, pos, NAN_IPK_LEN);
+	pos += NAN_IPK_LEN;
+	os_memcpy(tmp.iik, pos, NAN_IIK_LEN);
+	pos += NAN_IIK_LEN;
+	tmp.valid_duration = WPA_GET_BE32(pos);
+	pos += 4;
+
+	if (conf) {
+		wpa_printf(MSG_DEBUG,
+			   "NAN: Unsupported PKR Record Configuration 0x%02x",
+			   conf);
+		return -1;
+	}
+
+	/* The remainder is the mandatory Record Signature */
+	if (pos == end)
+		goto truncated;
+
+	if (nan_crypto_verify_pkr_signature(tmp.ipk,
+					    signed_start, pos - signed_start,
+					    pos, end - pos) < 0) {
+		wpa_printf(MSG_DEBUG, "NAN: PKR Record Signature invalid");
+		return -1;
+	}
+
+	tmp.valid = true;
+	os_get_reltime(&tmp.created_at);
+	*pkr = tmp;
+	return 2 + rec_len;
+
+truncated:
+	wpa_printf(MSG_DEBUG, "NAN: Truncated PKR or missing Record Signature");
+	return -1;
+}
+
+
+/**
  * nan_nira_get_tag_nonce - Generate NIRA nonce and compute NIRA tag
  * @nan: Pointer to NAN configuration structure
  * @nonce: Buffer to store the generated NIRA nonce (output)

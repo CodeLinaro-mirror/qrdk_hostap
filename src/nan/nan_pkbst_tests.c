@@ -225,13 +225,91 @@ out:
 }
 
 
+static int test_make_pkr(struct nan_pkr *pkr, u8 *isk)
+{
+	struct crypto_ec_key *key = NULL;
+	int ret;
+
+	os_memset(pkr, 0, sizeof(*pkr));
+	ret = test_gen_key(&key, pkr->ipk, isk);
+	if (ret)
+		return ret;
+	crypto_ec_key_deinit(key);
+	os_memset(pkr->iik, 0x22, NAN_IIK_LEN);
+	pkr->op_ctrl = NAN_PKR_OP_CTRL_MUTUAL_REQUIRED;
+	pkr->valid_duration = 60;
+	pkr->valid = true;
+	return 0;
+}
+
+
+static int test_pkr_parse(void)
+{
+	struct nan_pkr pkr, parsed;
+	struct wpabuf *buf = NULL;
+	u8 isk[NAN_ISK_LEN], *pos;
+	size_t len;
+	int ret = -1;
+
+	if (test_make_pkr(&pkr, isk) < 0)
+		goto out;
+	buf = wpabuf_alloc(256);
+	if (!buf || nan_pkr_encode(buf, &pkr, isk) < 0)
+		goto out;
+	pos = wpabuf_mhead_u8(buf);
+	len = wpabuf_len(buf);
+
+	/* Round trip; trailing data after the record is not consumed */
+	wpabuf_put_u8(buf, 0xee);
+	os_memset(&parsed, 0, sizeof(parsed));
+	if (nan_pkr_parse(pos, len + 1, &parsed) != (int) len ||
+	    !parsed.valid || parsed.op_ctrl != pkr.op_ctrl ||
+	    parsed.valid_duration != pkr.valid_duration ||
+	    os_memcmp(parsed.ipk, pkr.ipk, NAN_IPK_LEN) != 0 ||
+	    os_memcmp(parsed.iik, pkr.iik, NAN_IIK_LEN) != 0 ||
+	    !nan_pairing_is_pkr_usable(&parsed))
+		goto out;
+
+	/* Truncated input */
+	if (nan_pkr_parse(pos, len - 1, &parsed) >= 0 ||
+	    nan_pkr_parse(pos, 1, &parsed) >= 0)
+		goto out;
+
+	/* Tampered signed field */
+	pos[2 + 5 + NAN_IPK_LEN] ^= 0x01;
+	if (nan_pkr_parse(pos, len, &parsed) >= 0)
+		goto out;
+	pos[2 + 5 + NAN_IPK_LEN] ^= 0x01;
+
+	/* Unsupported version */
+	pos[2] = 1;
+	if (nan_pkr_parse(pos, len, &parsed) >= 0)
+		goto out;
+	pos[2] = NAN_PKR_VERSION;
+
+	/* Record Signature is mandatory */
+	WPA_PUT_BE16(pos, 1 + 3 + 1 + NAN_IPK_LEN + NAN_IIK_LEN + 4);
+	if (nan_pkr_parse(pos, len, &parsed) >= 0)
+		goto out;
+
+	ret = 0;
+out:
+	if (ret)
+		wpa_printf(MSG_ERROR, "FAIL: PKR parsing");
+	forced_memzero(isk, sizeof(isk));
+	wpabuf_free(buf);
+	return ret;
+}
+
+
 /**
  * nan_pkbst_tests - Run NAN PKBST unit tests
  * Returns: 0 on success, -1 on failure
  */
 int nan_pkbst_tests(void)
 {
-	if (test_pkr_usable() || test_pkr_signature() || test_pkr_encode())
+	if (test_pkr_usable() || test_pkr_signature() || test_pkr_encode() ||
+	    test_pkr_parse())
 		return -1;
 	return 0;
 }

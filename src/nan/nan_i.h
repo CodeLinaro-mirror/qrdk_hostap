@@ -53,6 +53,7 @@ struct nan_pkr {
 bool nan_pairing_is_pkr_usable(const struct nan_pkr *pkr);
 int nan_pkr_encode(struct wpabuf *buf, const struct nan_pkr *pkr,
 		   const u8 *isk);
+int nan_pkr_parse(const u8 *data, size_t len, struct nan_pkr *pkr);
 
 /**
  * struct nan_ptk - NAN Pairwise Transient Key
