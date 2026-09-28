@@ -290,6 +290,7 @@ static void nan_bootstrap_handle_rx_request(struct nan_data *nan,
 	struct wpabuf *pbea;
 	u16 supported_methods = 0;
 	u16 auth_npba_pbm = 0; /* full service PBM for PASN M2 NPBA */
+	bool pkbst_request;
 
 	wpa_printf(MSG_DEBUG, "NAN: Bootstrap: RX request");
 
@@ -354,6 +355,8 @@ static void nan_bootstrap_handle_rx_request(struct nan_data *nan,
 	peer->bootstrap.initiator = true;
 	peer->bootstrap.dialog_token = dialog_token;
 	peer->bootstrap.requested_pbm = nan_complement_pbm(pbm);
+	pkbst_request = peer->bootstrap.extended_pbm &&
+		peer->bootstrap.pkbst_mode != NAN_PKBST_MODE_NONE;
 	peer->bootstrap.in_progress = true;
 	peer->bootstrap.handle = handle;
 	peer->bootstrap.req_instance_id = req_instance_id;
@@ -361,6 +364,14 @@ static void nan_bootstrap_handle_rx_request(struct nan_data *nan,
 		nan->cfg->get_supported_bootstrap_methods(nan->cfg->cb_ctx,
 							  handle);
 	auth_npba_pbm = supported_methods;
+
+	if (pkbst_request) {
+		wpa_printf(MSG_DEBUG,
+			   "NAN: Bootstrap: Accepting PKBST request");
+		peer->bootstrap.status = NAN_PBA_STATUS_ACCEPTED;
+		peer->bootstrap.reason_code = 0;
+		goto send_response;
+	}
 
 	if (!(supported_methods & peer->bootstrap.requested_pbm)) {
 		wpa_printf(MSG_DEBUG,
@@ -695,6 +706,57 @@ bool nan_bootstrap_handle_rx(struct nan_data *nan, const u8 *peer_nmi,
 }
 
 
+/* Build and transmit a PKBST bootstrap request using the PBEA. */
+static int nan_bootstrap_request_pkbst(struct nan_data *nan,
+				       struct nan_peer *peer, int handle,
+				       u8 req_instance_id, u16 method)
+{
+	struct wpabuf *buf = NULL, *pbea;
+	int ret;
+
+	if (!(method & nan->cfg->pairing_cfg.extended_pkbst_method) ||
+	    peer->bootstrap.in_progress)
+		return -1;
+
+	nan_bootstrap_reset(nan, peer);
+	peer->bootstrap.pkbst_mode = method == NAN_PBEA_PKBST_MUTUAL ?
+		NAN_PKBST_MODE_MUTUAL : NAN_PKBST_MODE_ONE_WAY;
+	peer->bootstrap.dialog_token = nan_get_next_dialog_token(nan);
+	peer->bootstrap.requested_pbm = 0;
+	peer->bootstrap.in_progress = true;
+	peer->bootstrap.handle = handle;
+	peer->bootstrap.req_instance_id = req_instance_id;
+
+	peer->bootstrap.npba = nan_bootstrap_build_npba(nan, peer);
+	pbea = nan_bootstrap_build_pbea(nan, handle);
+	if (peer->bootstrap.npba)
+		buf = wpabuf_alloc(wpabuf_len(peer->bootstrap.npba) +
+				   (pbea ? wpabuf_len(pbea) : 0));
+	if (!buf) {
+		wpabuf_free(pbea);
+		nan_bootstrap_reset(nan, peer);
+		return -1;
+	}
+	wpabuf_put_buf(buf, peer->bootstrap.npba);
+	if (pbea)
+		wpabuf_put_buf(buf, pbea);
+	wpabuf_free(pbea);
+
+	wpa_printf(MSG_DEBUG, "NAN: Bootstrap: PKBST request, mode=%d",
+		   peer->bootstrap.pkbst_mode);
+	ret = nan->cfg->transmit_followup(nan->cfg->cb_ctx, peer->nmi_addr,
+					  buf, handle, req_instance_id,
+					  peer->freq);
+	wpabuf_free(buf);
+	if (ret) {
+		nan_bootstrap_reset(nan, peer);
+		return -1;
+	}
+
+	return 0;
+}
+
+
 /**
  * nan_bootstrap_request - Initiate NAN bootstrap request to a peer
  * @nan: NAN module context from nan_init()
@@ -750,6 +812,22 @@ int nan_bootstrap_request(struct nan_data *nan, int handle,
 		   MAC2STR(peer_nmi), peer->non_cluster,
 		   peer->bootstrap.supported_methods,
 		   peer->bootstrap.in_progress);
+
+	/*
+	 * With PKBST configured, a method value of 1 or 2 selects one-way or
+	 * mutual PKBST (NAN_PBEA_PKBST_*). The method is then signaled in the
+	 * PBEA and the NPBA method is zero.
+	 */
+	if (nan->cfg->pairing_cfg.extended_pkbst_method &&
+	    (pbm == NAN_PBEA_PKBST_ONE_WAY || pbm == NAN_PBEA_PKBST_MUTUAL)) {
+		if (auth) {
+			wpa_printf(MSG_DEBUG,
+				   "NAN: Bootstrap: Authorize PKBST request");
+			return 0;
+		}
+		return nan_bootstrap_request_pkbst(nan, peer, handle,
+						   req_instance_id, pbm);
+	}
 
 	if (!(pbm & nan->cfg->supported_bootstrap_methods)) {
 		wpa_printf(MSG_DEBUG,
