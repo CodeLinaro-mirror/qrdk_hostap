@@ -7827,6 +7827,11 @@ enum qca_vendor_attr_roam_control {
  * @QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_CONTROL: Nested attribute to
  *	set/get/clear the roam control config as
  *	defined @enum qca_vendor_attr_roam_control.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_CAPABILITY: Nested attribute to
+ *	get the roaming capability of the driver/firmware as defined by
+ *	@enum qca_wlan_vendor_attr_roam_capability. Used along with
+ *	QCA_WLAN_VENDOR_ROAMING_SUBCMD_CAPABILITY_GET.
  */
 enum qca_wlan_vendor_attr_roaming_config_params {
 	QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_INVALID = 0,
@@ -7865,6 +7870,8 @@ enum qca_wlan_vendor_attr_roaming_config_params {
 	QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_SET_BSSID_PARAMS_HINT = 21,
 
 	QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_CONTROL = 22,
+
+	QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_CAPABILITY = 23,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_AFTER_LAST,
@@ -7926,6 +7933,14 @@ enum qca_wlan_vendor_attr_roaming_config_params {
  *	QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_CONTROL.
  *	The driver shall continue with its default roaming behavior when data
  *	corresponding to an attribute is cleared.
+ *
+ * @QCA_WLAN_VENDOR_ROAMING_SUBCMD_CAPABILITY_GET: Command to obtain the
+ *	roaming capability of the driver/firmware with the attribute
+ *	QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_CAPABILITY, which carries the
+ *	attributes defined by enum qca_wlan_vendor_attr_roam_capability,
+ *	e.g., the maximum number of BSSIDs that can be configured in the
+ *	denylist (block list) and the maximum number of SSIDs that can be
+ *	configured in the allowlist.
  */
 enum qca_wlan_vendor_roaming_subcmd {
 	QCA_WLAN_VENDOR_ROAMING_SUBCMD_INVALID = 0,
@@ -7938,6 +7953,7 @@ enum qca_wlan_vendor_roaming_subcmd {
 	QCA_WLAN_VENDOR_ROAMING_SUBCMD_CONTROL_SET = 7,
 	QCA_WLAN_VENDOR_ROAMING_SUBCMD_CONTROL_GET = 8,
 	QCA_WLAN_VENDOR_ROAMING_SUBCMD_CONTROL_CLEAR = 9,
+	QCA_WLAN_VENDOR_ROAMING_SUBCMD_CAPABILITY_GET = 10,
 };
 
 /* old names for API compatibility */
@@ -7945,6 +7961,32 @@ enum qca_wlan_vendor_roaming_subcmd {
 	QCA_WLAN_VENDOR_ROAMING_SUBCMD_SSID_ALLOW_LIST
 #define QCA_WLAN_VENDOR_ROAMING_SUBCMD_SET_BLACKLIST_BSSID \
 	QCA_WLAN_VENDOR_ROAMING_SUBCMD_SET_DENYLIST_BSSID
+
+/**
+ * enum qca_wlan_vendor_attr_roam_capability - Attributes for data used by
+ *	QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_CAPABILITY, used with the sub
+ *	command QCA_WLAN_VENDOR_ROAMING_SUBCMD_CAPABILITY_GET.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ROAM_CAPABILITY_MAX_DENYLIST_BSSID_SIZE: Unsigned
+ *	32-bit value. Represents the maximum number of BSSIDs that the
+ *	driver/firmware supports configuring via
+ *	QCA_WLAN_VENDOR_ROAMING_SUBCMD_SET_DENYLIST_BSSID.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ROAM_CAPABILITY_MAX_SSID_ALLOW_LIST_SIZE: Unsigned
+ *	32-bit value. Represents the maximum number of SSIDs that the
+ *	driver/firmware supports configuring via
+ *	QCA_WLAN_VENDOR_ROAMING_SUBCMD_SSID_ALLOW_LIST.
+ */
+enum qca_wlan_vendor_attr_roam_capability {
+	QCA_WLAN_VENDOR_ATTR_ROAM_CAPABILITY_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_ROAM_CAPABILITY_MAX_DENYLIST_BSSID_SIZE = 1,
+	QCA_WLAN_VENDOR_ATTR_ROAM_CAPABILITY_MAX_SSID_ALLOW_LIST_SIZE = 2,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_ROAM_CAPABILITY_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_ROAM_CAPABILITY_MAX =
+	QCA_WLAN_VENDOR_ATTR_ROAM_CAPABILITY_AFTER_LAST - 1,
+};
 
 enum qca_wlan_vendor_attr_gscan_config_params {
 	QCA_WLAN_VENDOR_ATTR_GSCAN_SUBCMD_CONFIG_PARAM_INVALID = 0,
