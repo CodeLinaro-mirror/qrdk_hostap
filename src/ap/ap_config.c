@@ -1582,6 +1582,22 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+	if (full_config && conf->ieee80211bn && !bss->disable_11bn &&
+	    (!conf->ieee80211be || bss->disable_11be)) {
+		wpa_printf(MSG_INFO,
+			   "Cannot enable ieee80211bn without ieee80211be");
+		return -1;
+	}
+
+	if (full_config && conf->ieee80211bn && !bss->disable_11bn &&
+	    !bss->mld_ap) {
+		wpa_printf(MSG_INFO,
+			   "Cannot enable ieee80211bn without mld_ap");
+		return -1;
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 	if (full_config && bss->ignore_broadcast_ssid && conf->mbssid) {
 		wpa_printf(MSG_ERROR,
 			   "Hidden SSID is not suppored when MBSSID is enabled");
