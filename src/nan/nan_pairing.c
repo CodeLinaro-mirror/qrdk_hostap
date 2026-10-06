@@ -1436,6 +1436,12 @@ static int nan_send_nik(struct nan_data *nan_data, struct nan_peer *peer)
 		return 0;
 	}
 
+	if (peer->bootstrap.pkbst_mode != NAN_PKBST_MODE_NONE) {
+		wpa_printf(MSG_DEBUG,
+			   "NAN: Pairing: PKBST pairing, don't send NIK");
+		return 0;
+	}
+
 	if (!nan_data->cfg->pairing_cfg.npk_caching) {
 		wpa_printf(MSG_DEBUG,
 			   "NAN: Pairing: Local NPK caching not enabled, don't send NIK");
