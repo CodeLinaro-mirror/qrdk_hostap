@@ -4289,19 +4289,21 @@ void ibss_mesh_setup_freq(struct wpa_supplicant *wpa_s,
 	if (freq->vht_enabled || (freq->ht_enabled && is_24ghz) || is_6ghz)
 		freq->he_enabled = ibss_mesh_can_use_he(wpa_s, ssid, mode,
 							ieee80211_mode);
+	if (freq->he_enabled)
+		freq->eht_enabled = ibss_mesh_can_use_eht(wpa_s, ssid, mode,
+							  ieee80211_mode);
 	freq->channel = channel;
 	/* Setup higher BW only for 5 and 6 GHz */
 	if (mode->mode == HOSTAPD_MODE_IEEE80211A) {
 		ibss_mesh_select_40mhz(wpa_s, ssid, mode, freq, obss_scan,
 				       is_6ghz);
 		if (!ibss_mesh_select_80_160mhz(wpa_s, ssid, mode, freq,
-						ieee80211_mode, is_6ghz))
-			freq->he_enabled = freq->vht_enabled = false;
+						ieee80211_mode, is_6ghz)) {
+			freq->eht_enabled = false;
+			freq->he_enabled = false;
+			freq->vht_enabled = false;
+		}
 	}
-
-	if (freq->he_enabled)
-		freq->eht_enabled = ibss_mesh_can_use_eht(wpa_s, ssid, mode,
-							  ieee80211_mode);
 }
 
 
