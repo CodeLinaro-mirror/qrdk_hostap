@@ -1385,6 +1385,7 @@ void dh5_free(void *ctx)
 struct crypto_hash {
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
 	EVP_MAC_CTX *ctx;
+	EVP_MD_CTX *md_ctx;
 #else /* OpenSSL version >= 3.0 */
 	HMAC_CTX *ctx;
 #endif /* OpenSSL version >= 3.0 */
@@ -1397,9 +1398,10 @@ struct crypto_hash * crypto_hash_init(enum crypto_hash_alg alg, const u8 *key,
 {
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
 	struct crypto_hash *ctx;
-	EVP_MAC *mac;
+	EVP_MAC *mac = NULL;
 	OSSL_PARAM params[2];
 	char *a = NULL;
+	const EVP_MD *md_type = NULL;
 
 	switch (alg) {
 #ifndef OPENSSL_NO_MD5
@@ -1414,13 +1416,53 @@ struct crypto_hash * crypto_hash_init(enum crypto_hash_alg alg, const u8 *key,
 #endif /* OPENSSL_NO_SHA */
 #ifndef OPENSSL_NO_SHA256
 #ifdef CONFIG_SHA256
+	case CRYPTO_HASH_ALG_SHA256:
+		md_type = EVP_sha256();
+		break;
 	case CRYPTO_HASH_ALG_HMAC_SHA256:
 		a = "SHA256";
 		break;
 #endif /* CONFIG_SHA256 */
 #endif /* OPENSSL_NO_SHA256 */
+#ifndef OPENSSL_NO_SHA384
+#ifdef CONFIG_SHA384
+	case CRYPTO_HASH_ALG_SHA384:
+		md_type = EVP_sha384();
+		break;
+#endif /* CONFIG_SHA384 */
+#endif /* OPENSSL_NO_SHA384 */
+#ifndef OPENSSL_NO_SHA512
+#ifdef CONFIG_SHA512
+	case CRYPTO_HASH_ALG_SHA512:
+		md_type = EVP_sha512();
+		break;
+#endif /* CONFIG_SHA512 */
+#endif /* OPENSSL_NO_SHA512 */
 	default:
 		return NULL;
+	}
+
+	ctx = os_zalloc(sizeof(*ctx));
+	if (!ctx)
+		goto fail;
+
+	if (md_type) {
+		ctx->md_ctx = EVP_MD_CTX_new();
+		if (!ctx->md_ctx) {
+			os_free(ctx);
+			return NULL;
+		}
+
+		if (!EVP_DigestInit_ex(ctx->md_ctx, md_type, NULL)) {
+			wpa_printf(MSG_ERROR,
+				   "OpenSSL: EVP_DigestInit_ex failed: %s",
+				   ERR_error_string(ERR_get_error(), NULL));
+			EVP_MD_CTX_free(ctx->md_ctx);
+			os_free(ctx);
+			return NULL;
+		}
+
+		return ctx;
 	}
 
 	mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
@@ -1430,9 +1472,6 @@ struct crypto_hash * crypto_hash_init(enum crypto_hash_alg alg, const u8 *key,
 	params[0] = OSSL_PARAM_construct_utf8_string("digest", a, 0);
 	params[1] = OSSL_PARAM_construct_end();
 
-	ctx = os_zalloc(sizeof(*ctx));
-	if (!ctx)
-		goto fail;
 	ctx->ctx = EVP_MAC_CTX_new(mac);
 	if (!ctx->ctx) {
 		os_free(ctx);
@@ -1504,7 +1543,9 @@ void crypto_hash_update(struct crypto_hash *ctx, const u8 *data, size_t len)
 	if (ctx == NULL)
 		return;
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
-	if (!EVP_MAC_update(ctx->ctx, data, len))
+	if (ctx->ctx && !EVP_MAC_update(ctx->ctx, data, len))
+		ctx->failed = true;
+	if (ctx->md_ctx && !EVP_DigestUpdate(ctx->md_ctx, data, len))
 		ctx->failed = true;
 #else /* OpenSSL version >= 3.0 */
 	if (!HMAC_Update(ctx->ctx, data, len))
@@ -1525,8 +1566,22 @@ int crypto_hash_finish(struct crypto_hash *ctx, u8 *mac, size_t *len)
 
 	if (!mac || !len) {
 		EVP_MAC_CTX_free(ctx->ctx);
+		EVP_MD_CTX_free(ctx->md_ctx);
 		bin_clear_free(ctx, sizeof(*ctx));
 		return 0;
+	}
+
+	if (ctx->md_ctx) {
+		unsigned int hlen;
+
+		res = EVP_DigestFinal(ctx->md_ctx, mac, &hlen);
+		if (res != 1) {
+			EVP_MD_CTX_free(ctx->md_ctx);
+			bin_clear_free(ctx, sizeof(*ctx));
+			return -1;
+		}
+		mdlen = hlen;
+		goto done;
 	}
 
 	res = EVP_MAC_final(ctx->ctx, NULL, &mdlen, 0);
@@ -1537,6 +1592,7 @@ int crypto_hash_finish(struct crypto_hash *ctx, u8 *mac, size_t *len)
 	}
 	res = EVP_MAC_final(ctx->ctx, mac, &mdlen, mdlen);
 	EVP_MAC_CTX_free(ctx->ctx);
+done:
 	failed = ctx->failed;
 	bin_clear_free(ctx, sizeof(*ctx));
 
