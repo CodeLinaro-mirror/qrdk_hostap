@@ -22,3 +22,6 @@ ml-elems: $(OBJS) $(LIBS)
 
 clean: common-clean
 	rm -f ml-elems *~ *.o *.d ../*~ ../*.o ../*.d
+
+test: ml-elems
+	./ml-elems corpus/*
