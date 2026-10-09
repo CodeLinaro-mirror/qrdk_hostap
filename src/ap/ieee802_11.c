@@ -859,7 +859,7 @@ static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 		}
 		os_memcpy(ptr + 2, mic, mic_len);
 	}
-#endif /* CONFIF_IEEE8021X_AUTH */
+#endif /* CONFIG_IEEE8021X_AUTH */
 
 	if (hostapd_drv_send_mlme(hapd, reply, rlen, 0, NULL, 0, 0) < 0)
 		wpa_printf(MSG_INFO, "send_auth_reply: send failed");
