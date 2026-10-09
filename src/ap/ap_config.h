@@ -1507,5 +1507,6 @@ void hostapd_config_free_afc_cert_ids(struct hostapd_config *conf);
 int hostapd_config_sp_key_mgmt(const struct hostapd_bss_config *conf);
 int hostapd_config_all_key_mgmt(const struct hostapd_bss_config *conf);
 bool hostapd_config_sae_ext_key(const struct hostapd_bss_config *conf);
+bool hostapd_pqc_enabled(const struct hostapd_bss_config *conf);
 
 #endif /* HOSTAPD_CONFIG_H */

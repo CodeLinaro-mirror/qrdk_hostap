@@ -235,6 +235,11 @@ static inline bool wpa_key_mgmt_pqc(int akm)
 	return !!(akm & (WPA_KEY_MGMT_PQC_8021X | WPA_KEY_MGMT_FT_PQC_8021X));
 }
 
+static inline bool sec_prof_pqc(int num)
+{
+	return num >= 16 && num <= 23;
+}
+
 #define WPA_PROTO_WPA BIT(0)
 #define WPA_PROTO_RSN BIT(1)
 #define WPA_PROTO_WAPI BIT(2)
