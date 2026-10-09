@@ -3324,6 +3324,8 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 
 		/* Validate Security Profile element, if present */
 		if (hapd->conf->security_profiles && elems.security_profile) {
+			const struct security_profile_entry *sp = NULL;
+
 			wpa_hexdump(MSG_DEBUG,
 				    "STA Security Profile element body in 802.1X auth",
 				    elems.security_profile,
@@ -3335,11 +3337,26 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 				    elems.rsnxe, elems.rsnxe_len,
 				    elems.security_profile,
 				    elems.security_profile_len,
-				    NULL)) {
+				    &sp)) {
 				wpa_printf(MSG_INFO,
 					   "Rejecting 802.1X auth from " MACSTR
 					   " - Security Profile element mismatch",
 					   MAC2STR(sta->addr));
+				resp = WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
+				goto fail;
+			}
+
+			if (sta->eap_auth_data.pqc_profile &&
+			    (!sp ||
+			     sta->eap_auth_data.security_profile !=
+			     sp->number)) {
+				wpa_printf(
+					MSG_INFO,
+					"Rejecting 802.1X auth from " MACSTR
+					" - Security profile mismatch (SP=%d != PQC=%u)",
+					MAC2STR(sta->addr),
+					sp ? sp->number : -1,
+					sta->eap_auth_data.security_profile);
 				resp = WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
 				goto fail;
 			}
