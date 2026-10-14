@@ -3884,7 +3884,8 @@ static void ibss_mesh_select_40mhz(struct wpa_supplicant *wpa_s,
 				   const struct wpa_ssid *ssid,
 				   struct hostapd_hw_modes *mode,
 				   struct hostapd_freq_params *freq,
-				   int obss_scan, bool is_6ghz)
+				   int obss_scan, bool is_6ghz,
+				   int ieee80211_mode, bool is_24ghz)
 {
 	int chan_idx;
 	struct hostapd_channel_data *pri_chan = NULL, *sec_chan = NULL;
@@ -3899,11 +3900,18 @@ static void ibss_mesh_select_40mhz(struct wpa_supplicant *wpa_s,
 		81, 89, 97, 105, 113, 121, 129, 137, 145, 153,
 		161, 169, 177, 185, 193, 201, 209, 217, 225
 	};
-
+	static const int ht40plus_2g4[] = { 1, 2, 3, 4, 5, 6 };
 	int ht40 = -1;
 
-	if (!freq->ht_enabled && !is_6ghz)
+	if (is_24ghz) {
+		if (!freq->he_enabled ||
+		    !(mode->he_capab[ieee80211_mode].phy_cap[
+			      HE_PHYCAP_CHANNEL_WIDTH_SET_IDX] &
+		      HE_PHYCAP_CHANNEL_WIDTH_SET_40MHZ_IN_2G))
+			return;
+	} else if (!freq->ht_enabled && !is_6ghz) {
 		return;
+	}
 
 	for (chan_idx = 0; chan_idx < mode->num_channels; chan_idx++) {
 		pri_chan = &mode->channels[chan_idx];
@@ -3927,6 +3935,13 @@ static void ibss_mesh_select_40mhz(struct wpa_supplicant *wpa_s,
 	if (is_6ghz) {
 		for (j = 0; j < ARRAY_SIZE(ht40plus_6ghz); j++) {
 			if (ht40plus_6ghz[j] == freq->channel) {
+				ht40 = 1;
+				break;
+			}
+		}
+	} else if (is_24ghz) {
+		for (j = 0; j < ARRAY_SIZE(ht40plus_2g4); j++) {
+			if (ht40plus_2g4[j] == freq->channel) {
 				ht40 = 1;
 				break;
 			}
@@ -3965,28 +3980,48 @@ static void ibss_mesh_select_40mhz(struct wpa_supplicant *wpa_s,
 	}
 	freq->sec_channel_offset = ht40;
 
-	if (obss_scan) {
+	if (obss_scan || is_24ghz) {
 		struct wpa_scan_results *scan_res;
 
 		scan_res = wpa_supplicant_get_scan_results(wpa_s, NULL, 0,
 							   NULL);
 		if (scan_res == NULL) {
-			/* Back to HT20 */
+			/* Back to HT20/HE20 */
 			freq->sec_channel_offset = 0;
+			if (is_24ghz) {
+				freq->bandwidth = 20;
+				freq->center_freq1 = freq->freq;
+			}
 			return;
 		}
 
-		res = check_40mhz_5g(scan_res, pri_chan, sec_chan);
+		if (is_24ghz)
+			res = check_40mhz_2g4(mode, scan_res, pri_chan->chan,
+					      sec_chan->chan);
+		else
+			res = check_40mhz_5g(scan_res, pri_chan, sec_chan);
 		switch (res) {
 		case 0:
-			/* Back to HT20 */
+			/* Back to HT20/HE20 */
 			freq->sec_channel_offset = 0;
+			if (is_24ghz) {
+				freq->bandwidth = 20;
+				freq->center_freq1 = freq->freq;
+			}
 			break;
 		case 1:
 			/* Configuration allowed */
+			if (is_24ghz) {
+				freq->bandwidth = 40;
+				freq->center_freq1 = freq->freq +
+					freq->sec_channel_offset * 10;
+				freq->center_freq2 = 0;
+			}
 			break;
 		case 2:
-			/* Switch pri/sec channels */
+			/* Switch pri/sec channels (5/6 GHz only) */
+			if (is_24ghz)
+				break;
 			freq->freq = hw_get_freq(mode, sec_chan->chan);
 			freq->sec_channel_offset = -freq->sec_channel_offset;
 			freq->channel = sec_chan->chan;
@@ -4293,10 +4328,12 @@ void ibss_mesh_setup_freq(struct wpa_supplicant *wpa_s,
 		freq->eht_enabled = ibss_mesh_can_use_eht(wpa_s, ssid, mode,
 							  ieee80211_mode);
 	freq->channel = channel;
+
+	ibss_mesh_select_40mhz(wpa_s, ssid, mode, freq, obss_scan, is_6ghz,
+			       ieee80211_mode, is_24ghz);
+
 	/* Setup higher BW only for 5 and 6 GHz */
 	if (mode->mode == HOSTAPD_MODE_IEEE80211A) {
-		ibss_mesh_select_40mhz(wpa_s, ssid, mode, freq, obss_scan,
-				       is_6ghz);
 		if (!ibss_mesh_select_80_160mhz(wpa_s, ssid, mode, freq,
 						ieee80211_mode, is_6ghz)) {
 			freq->eht_enabled = false;
