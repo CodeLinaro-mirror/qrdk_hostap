@@ -1903,6 +1903,9 @@ int wpas_nan_set(struct wpa_supplicant *wpa_s, char *cmd)
 				return -1;
 			}
 
+			if (nik_type == NAN_NIK_TYPE_GROUP && possessed_nik)
+				nan_set_gntag_discovery_active(nan, true);
+
 			if (has_assoc_nik && (nik_type == NAN_NIK_TYPE_PEER ||
 					      nik_type == NAN_NIK_TYPE_GROUP) &&
 			    nan_add_assoc_self_nik(nan, nik_type, nik,

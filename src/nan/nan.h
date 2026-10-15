@@ -1060,6 +1060,7 @@ void nan_pairing_unpair_peer(struct nan_data *nan_data, const u8 *peer_addr)
 int nan_add_nik(struct nan_data *nan, const u8 *nik, enum nan_nik_type type,
 		bool possessed_nik);
 void nan_flush_niks(struct nan_data *nan);
+void nan_set_gntag_discovery_active(struct nan_data *nan, bool active);
 int nan_add_assoc_self_nik(struct nan_data *nan, enum nan_nik_type type,
 			   const u8 *nik, const u8 *self_nik);
 int nan_irsa_get_nonce_tag_tlv(struct nan_data *nan, u8 *irsa_nonce,

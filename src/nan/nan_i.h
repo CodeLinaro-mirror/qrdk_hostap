@@ -722,6 +722,7 @@ struct nan_data {
 	struct dl_list self_nik_list;
 	struct dl_list peer_nik_list;
 	struct dl_list group_nik_list;
+	bool gntag_discovery_active;
 
 	struct nan_pkr self_pkr;
 	u8 self_isk[NAN_ISK_LEN];

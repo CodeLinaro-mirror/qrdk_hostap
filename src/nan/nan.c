@@ -4117,6 +4117,14 @@ void nan_flush_niks(struct nan_data *nan)
 	nan_flush_nik_list(&nan->self_nik_list);
 	nan_flush_nik_list(&nan->peer_nik_list);
 	nan_flush_nik_list(&nan->group_nik_list);
+	nan->gntag_discovery_active = false;
+}
+
+
+void nan_set_gntag_discovery_active(struct nan_data *nan, bool active)
+{
+	if (nan)
+		nan->gntag_discovery_active = active;
 }
 
 
@@ -4307,6 +4315,10 @@ static size_t nan_irsa_pkbst_tags(struct nan_data *nan, bool is_publisher,
 	const u8 *self_iik = nan->self_pkr.valid ? nan->self_pkr.iik : NULL;
 	u8 methods = nan->cfg->pairing_cfg.extended_pkbst_method;
 	size_t len = 0;
+
+	if (nan->gntag_discovery_active)
+		return nan_irsa_list_tags(nan, &nan->group_nik_list,
+					  NAN_TAG_TYPE_GN, irsa_nonce, pos);
 
 	/* A peer with which a PKBST method has been negotiated */
 	dl_list_for_each(peer, &nan->peer_list, struct nan_peer, list) {
