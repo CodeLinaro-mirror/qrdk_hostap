@@ -6933,12 +6933,24 @@ static void wpas_link_reconfig(struct wpa_supplicant *wpa_s)
 
 
 #ifdef CONFIG_PASN
+
+#ifdef CONFIG_NAN
+static bool is_nan_cluster_id(const u8 *addr)
+{
+	return WPA_GET_BE24(addr) == OUI_WFA && addr[3] == 0x01;
+}
+#endif /* CONFIG_NAN */
+
+
 static int wpas_pasn_auth(struct wpa_supplicant *wpa_s,
 			  const struct ieee80211_mgmt *mgmt, size_t len,
 			  int freq)
 {
 	struct ieee802_11_elems elems;
 	size_t auth_length;
+#ifdef CONFIG_NAN
+	u16 auth_transaction;
+#endif /* CONFIG_NAN */
 
 	auth_length = IEEE80211_HDRLEN + sizeof(mgmt->u.auth);
 
@@ -6971,12 +6983,21 @@ static int wpas_pasn_auth(struct wpa_supplicant *wpa_s,
 		return wpas_pr_pasn_auth_rx(wpa_s, mgmt, len, freq);
 #endif /* CONFIG_PR */
 #ifdef CONFIG_NAN
-	if (wpa_s->nan && elems.nan_ie && elems.nan_len)
+	auth_transaction = le_to_host16(mgmt->u.auth.auth_transaction);
+	if (wpa_s->nan &&
+	    ((elems.nan_ie && elems.nan_len) ||
+	     (is_nan_cluster_id(mgmt->bssid) &&
+	      auth_transaction == WLAN_AUTH_TR_SEQ_PASN_AUTH3))) {
+		wpa_printf(MSG_DEBUG,
+			   "PASN: Routing NAN transaction %u",
+			   auth_transaction);
 		return wpas_nan_pasn_auth_rx(wpa_s, mgmt, len, freq);
+	}
 #endif /* CONFIG_NAN */
 
 	return wpas_pasn_auth_rx(wpa_s, mgmt, len);
 }
+
 #endif /* CONFIG_PASN */
 
 
