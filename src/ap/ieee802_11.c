@@ -767,6 +767,8 @@ static int add_to_auth_transcript(struct sta_info *sta,
 
 	if (init_auth_transcript(sta) < 0)
 		return -1;
+	if (!sta->eap_auth_data.transcript)
+		return 0;
 
 	if (frame_len > 8) {
 		size_t skip_len = 8 + WPA_GET_LE16(frame + 6);
