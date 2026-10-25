@@ -79,5 +79,6 @@ int eapol_auth_eap_pending_cb(struct eapol_state_machine *sm, void *ctx);
 void eapol_auth_reauthenticate(struct eapol_state_machine *sm);
 int eapol_auth_set_conf(struct eapol_state_machine *sm, const char *param,
 			const char *value);
+void eapol_auth_restart_sm(struct eapol_state_machine *sm);
 
 #endif /* EAPOL_AUTH_SM_H */

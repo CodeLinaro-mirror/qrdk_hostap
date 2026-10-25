@@ -1274,3 +1274,9 @@ void eapol_auth_deinit(struct eapol_authenticator *eapol)
 #endif /* CONFIG_WEP */
 	os_free(eapol);
 }
+
+
+void eapol_auth_restart_sm(struct eapol_state_machine *sm)
+{
+	sm->stopped = false;
+}

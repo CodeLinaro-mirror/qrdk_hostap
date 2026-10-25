@@ -1417,6 +1417,11 @@ void ieee802_1x_new_station(struct hostapd_data *hapd, struct sta_info *sta)
 			return;
 		}
 		reassoc = 0;
+	} else {
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE8021X,
+			       HOSTAPD_LEVEL_DEBUG, "restart authentication");
+		eapol_auth_restart_sm(sta->eapol_sm);
+
 	}
 
 #ifdef CONFIG_WPS
