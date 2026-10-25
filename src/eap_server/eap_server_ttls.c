@@ -28,7 +28,7 @@ struct eap_ttls_data {
 	struct eap_ssl_data ssl;
 	enum {
 		START, PHASE1, PHASE2_START, PHASE2_METHOD,
-		PHASE2_MSCHAPV2_RESP, SUCCESS, FAILURE
+		PHASE2_MSCHAPV2_RESP, PROTECTED_SUCCESS, SUCCESS, FAILURE
 	} state;
 
 	int ttls_version;
@@ -55,6 +55,8 @@ static const char * eap_ttls_state_txt(int state)
 		return "PHASE2_METHOD";
 	case PHASE2_MSCHAPV2_RESP:
 		return "PHASE2_MSCHAPV2_RESP";
+	case PROTECTED_SUCCESS:
+		return "PROTECTED_SUCCESS";
 	case SUCCESS:
 		return "SUCCESS";
 	case FAILURE:
@@ -506,6 +508,8 @@ static struct wpabuf * eap_ttls_buildReq(struct eap_sm *sm, void *priv, u8 id)
 		wpabuf_free(data->ssl.tls_out);
 		data->ssl.tls_out_pos = 0;
 		data->ssl.tls_out = eap_ttls_build_phase2_mschapv2(sm, data);
+		break;
+	case PROTECTED_SUCCESS:
 		break;
 	default:
 		wpa_printf(MSG_DEBUG, "EAP-TTLS: %s - unexpected state %d",
@@ -1201,6 +1205,8 @@ static void eap_ttls_process_msg(struct eap_sm *sm, void *priv,
 		}
 		eap_ttls_start_tnc(sm, data);
 		break;
+	case PROTECTED_SUCCESS:
+		break;
 	default:
 		wpa_printf(MSG_DEBUG, "EAP-TTLS: Unexpected state %d in %s",
 			   data->state, __func__);
@@ -1227,6 +1233,12 @@ static void eap_ttls_process(struct eap_sm *sm, void *priv,
 	if (!tls_connection_established(sm->cfg->ssl_ctx, data->ssl.conn) ||
 	    !tls_connection_resumed(sm->cfg->ssl_ctx, data->ssl.conn))
 		return;
+
+	if (data->state == PROTECTED_SUCCESS) {
+		eap_ttls_state(data, SUCCESS);
+		return;
+	}
+
 
 	buf = tls_connection_get_success_data(data->ssl.conn);
 	if (!buf || wpabuf_len(buf) < 2) {
@@ -1272,9 +1284,15 @@ static void eap_ttls_process(struct eap_sm *sm, void *priv,
 		return;
 	}
 
-	wpa_printf(MSG_DEBUG,
-		   "EAP-TTLS: Resuming previous session - skip Phase2");
-	eap_ttls_state(data, SUCCESS);
+	if (data->ssl.tls_v13) {
+		wpa_printf(MSG_DEBUG,
+			   "EAP-TTLS: Resuming previous session - send protected success and skip Phase2");
+		eap_ttls_state(data, PROTECTED_SUCCESS);
+	} else {
+		wpa_printf(MSG_DEBUG,
+			   "EAP-TTLS: Resuming previous session - skip Phase2");
+		eap_ttls_state(data, SUCCESS);
+	}
 	tls_connection_set_success_data_resumed(data->ssl.conn);
 }
 
