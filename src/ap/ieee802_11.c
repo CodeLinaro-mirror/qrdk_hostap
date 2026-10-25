@@ -3365,7 +3365,7 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 			wpa_printf(MSG_INFO,
 				   "Invalid pairwise cipher (0x%x) in RSNE",
 				   rsn.pairwise_cipher);
-			return WPA_INVALID_PAIRWISE;
+			return WLAN_STATUS_INVALID_PAIRWISE_CIPHER;
 		}
 		sta->eap_auth_data.cipher = rsn.pairwise_cipher;
 		wpa_printf(MSG_DEBUG, "Received pairwise cipher (0x%x) in RSNE",
@@ -3376,7 +3376,7 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 		       hostapd_config_sp_key_mgmt(hapd->conf)))) {
 			wpa_printf(MSG_INFO, "Invalid key mgmt (0x%x) in RSNE",
 				   rsn.key_mgmt);
-			return WPA_INVALID_AKMP;
+			return WLAN_STATUS_INVALID_AKMP;
 		}
 		sta->eap_auth_data.akm = rsn.key_mgmt;
 		wpa_printf(MSG_DEBUG, "Received keymgmt (0x%x) in RSNE",
@@ -3395,7 +3395,7 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 			wpa_printf(MSG_INFO,
 				   "Invalid key mgmt (0x%x) in AKM Suite Selector element",
 				   sta->eap_auth_data.akm);
-			return WPA_INVALID_AKMP;
+			return WLAN_STATUS_INVALID_AKMP;
 		}
 		wpa_printf(MSG_DEBUG,
 			   "Received keymgmt (0x%x) in AKM Suite Selector element",
