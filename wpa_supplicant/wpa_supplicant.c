@@ -1599,7 +1599,10 @@ static bool sec_prof_stronger(const struct security_profile_entry *a,
 			      const struct security_profile_entry *b)
 {
 	static const int pref[] = {
-		7, 15, 6, 14, 5, 13, 4, 12, 3, 11, 2, 10, 1, 9, 0, 8
+#ifdef CONFIG_PQC
+		23, 19, 20, 16, 22, 18, 21, 17,
+#endif /* CONFIG_PQC */
+		7, 6, 5, 4, 3, 2, 1, 9, 0, 8
 	};
 	int a_pos = -1, b_pos = -1;
 	unsigned int i;
