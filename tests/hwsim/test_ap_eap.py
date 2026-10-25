@@ -6580,12 +6580,24 @@ def test_eap_ttls_pap_session_resumption_force_phase2(dev, apdev):
     """EAP-TTLS/PAP session resumption while forcing Phase 2 authentication"""
     run_eap_ttls_pap_session_resumption(dev, apdev, True)
 
-def run_eap_ttls_pap_session_resumption(dev, apdev, phase2_auth):
+def test_eap_ttls_pap_session_resumption_13(dev, apdev):
+    """EAP-TTLS/PAP session resumption with TLSv1.3"""
+    run_eap_ttls_pap_session_resumption(dev, apdev, False, True)
+
+def test_eap_ttls_pap_session_resumption_force_phase2_13(dev, apdev):
+    """EAP-TTLS/PAP session resumption while forcing Phase 2 authentication with TLSv1.3"""
+    run_eap_ttls_pap_session_resumption(dev, apdev, True, True)
+
+def run_eap_ttls_pap_session_resumption(dev, apdev, phase2_auth, tls13=False):
     params = int_eap_server_params()
     params['tls_session_lifetime'] = '60'
+    if tls13:
+        params['tls_flags'] = '[ENABLE-TLSv1.3]'
     hapd = hostapd.add_ap(apdev[0], params)
     check_tls_session_resumption_capa(dev[0], hapd)
     phase1 = "phase2_auth=2" if phase2_auth else ""
+    if tls13:
+        phase1 += " tls_disable_tlsv1_0=1 tls_disable_tlsv1_1=1 tls_disable_tlsv1_2=1 tls_disable_tlsv1_3=0"
     eap_connect(dev[0], hapd, "TTLS", "pap user",
                 anonymous_identity="ttls", password="password",
                 ca_cert="auth_serv/ca.pem", eap_workaround='0',
@@ -6606,6 +6618,32 @@ def run_eap_ttls_pap_session_resumption(dev, apdev, phase2_auth):
     if not phase2_auth and not reused:
         raise Exception("Session resumption not used on the second connection")
     hwsim_utils.test_connectivity(dev[0], hapd)
+
+def test_eap_ttls_pap_session_resumption_13_fail(dev, apdev):
+    """EAP-TTLS/PAP session resumption with TLSv1.3 and failure in first auth"""
+    params = int_eap_server_params()
+    params['tls_session_lifetime'] = '60'
+    params['tls_flags'] = '[ENABLE-TLSv1.3]'
+    hapd = hostapd.add_ap(apdev[0], params)
+    check_tls_session_resumption_capa(dev[0], hapd)
+    phase1 = "tls_disable_tlsv1_0=1 tls_disable_tlsv1_1=1 tls_disable_tlsv1_2=1 tls_disable_tlsv1_3=0 resume_on_fail=1"
+    dev[0].connect("test-wpa2-eap",
+                   key_mgmt="WPA-EAP WPA-EAP-SHA256 WPA-EAP-SHA384",
+                   eap="TTLS", identity="pap user",
+                   wait_connect=False, scan_freq="2412", ieee80211w="1",
+                   anonymous_identity="ttls", password="wrong",
+                   ca_cert="auth_serv/ca.pem", eap_workaround='0',
+                   phase1=phase1, phase2="auth=PAP")
+    ev = dev[0].wait_event(["CTRL-EVENT-EAP-FAILURE"], timeout=10)
+    dev[0].request("DISCONNECT")
+    if ev is None:
+        raise Exception("EAP-Failure not reported")
+    time.sleep(10)
+    dev[0].request("RECONNECT")
+    ev = dev[0].wait_event(["CTRL-EVENT-EAP-FAILURE"], timeout=10)
+    if ev is None:
+        raise Exception("EAP-Failure not reported on resumption attempt")
+    dev[0].request("DISCONNECT")
 
 def test_eap_ttls_chap_session_resumption(dev, apdev):
     """EAP-TTLS/CHAP session resumption"""

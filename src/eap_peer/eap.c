@@ -216,6 +216,18 @@ static int eap_sm_append_3gpp_realm(struct eap_sm *sm, char *imsi,
 SM_STATE(EAP, INITIALIZE)
 {
 	SM_ENTRY(EAP, INITIALIZE);
+#ifdef CONFIG_TESTING_OPTIONS
+	if (sm->prev_failure) {
+		struct eap_peer_config *config = eap_get_config(sm);
+
+		if (config && config->phase1 &&
+		    os_strstr(config->phase1, "resume_on_fail=1")) {
+			wpa_printf(MSG_DEBUG,
+				   "TESTING: Clear EAP prev_failure");
+			sm->prev_failure = false;
+		}
+	}
+#endif /* CONFIG_TESTING_OPTIONS */
 	if (sm->fast_reauth && sm->m && sm->m->has_reauth_data &&
 	    sm->m->has_reauth_data(sm, sm->eap_method_priv) &&
 	    !sm->prev_failure &&
