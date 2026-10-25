@@ -1218,10 +1218,13 @@ int crypto_get_random(void *buf, size_t len)
 #endif /* CONFIG_FIPS */
 
 
-#if defined(EAP_PWD) || defined(EAP_SERVER_PWD)
+#if defined(EAP_PWD) || defined(EAP_SERVER_PWD) || defined(CONFIG_PQC)
 struct crypto_hash {
+	bool use_hmac;
 	Hmac hmac;
 	int size;
+	wc_HashAlg hash;
+	enum wc_HashType hash_type;
 };
 
 
@@ -1231,6 +1234,7 @@ struct crypto_hash * crypto_hash_init(enum crypto_hash_alg alg, const u8 *key,
 	struct crypto_hash *ret = NULL;
 	struct crypto_hash *hash;
 	int type;
+	enum wc_HashType hash_type = WC_HASH_TYPE_NONE;
 
 	hash = os_zalloc(sizeof(*hash));
 	if (!hash)
@@ -1251,20 +1255,49 @@ struct crypto_hash * crypto_hash_init(enum crypto_hash_alg alg, const u8 *key,
 #endif /* NO_SHA */
 #ifdef CONFIG_SHA256
 #ifndef NO_SHA256
+	case CRYPTO_HASH_ALG_SHA256:
+		hash_type = WC_HASH_TYPE_SHA256;
+		hash->size = 32;
+		break;
 	case CRYPTO_HASH_ALG_HMAC_SHA256:
 		type = WC_SHA256;
 		hash->size = 32;
 		break;
 #endif /* NO_SHA256 */
 #endif /* CONFIG_SHA256 */
+#ifdef CONFIG_SHA384
+#ifndef NO_SHA384
+	case CRYPTO_HASH_ALG_SHA384:
+		hash_type = WC_HASH_TYPE_SHA384;
+		hash->size = 48;
+		break;
+#endif /* NO_SHA384 */
+#endif /* CONFIG_SHA384 */
+#ifdef CONFIG_SHA512
+#ifndef NO_SHA512
+	case CRYPTO_HASH_ALG_SHA512:
+		hash_type = WC_HASH_TYPE_SHA512;
+		hash->size = 64;
+		break;
+#endif /* NO_SHA512 */
+#endif /* CONFIG_SHA512 */
 	default:
 		goto done;
 	}
 
+	if (hash_type != WC_HASH_TYPE_NONE) {
+		if (wc_HashInit(&hash->hash, hash_type))
+			goto done;
+		hash->hash_type = hash_type;
+		goto init_done;
+	}
+
+	hash->use_hmac = true;
 	if (wc_HmacInit(&hash->hmac, NULL, INVALID_DEVID) != 0 ||
 	    wc_HmacSetKey(&hash->hmac, type, key, key_len) != 0)
 		goto done;
 
+init_done:
 	ret = hash;
 	hash = NULL;
 done:
@@ -1277,7 +1310,10 @@ void crypto_hash_update(struct crypto_hash *ctx, const u8 *data, size_t len)
 {
 	if (!ctx)
 		return;
-	wc_HmacUpdate(&ctx->hmac, data, len);
+	if (ctx->use_hmac)
+		wc_HmacUpdate(&ctx->hmac, data, len);
+	else
+		wc_HashUpdate(&ctx->hash, ctx->hash_type, data, len);
 }
 
 
@@ -1291,7 +1327,11 @@ int crypto_hash_finish(struct crypto_hash *ctx, u8 *mac, size_t *len)
 	if (!mac || !len)
 		goto done;
 
-	if (wc_HmacFinal(&ctx->hmac, mac) != 0) {
+	if (ctx->use_hmac && wc_HmacFinal(&ctx->hmac, mac) != 0) {
+		ret = -1;
+		goto done;
+	} else if (!ctx->use_hmac && wc_HashFinal(&ctx->hash, ctx->hash_type,
+					     mac) != 0) {
 		ret = -1;
 		goto done;
 	}
