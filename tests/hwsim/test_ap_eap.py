@@ -8026,3 +8026,19 @@ def test_ap_wpa2_eap_timeout(dev, apdev):
     # Verify that connection can still be established
     dev[0].request("RECONNECT")
     dev[0].wait_connected()
+
+def test_ap_wpa2_eap_ttls_pap_logoff(dev, apdev):
+    """WPA2-Enterprise EAP-TTLS/PAP and EAPOL-Logoff behavior"""
+    params = hostapd.wpa2_eap_params(ssid="test-wpa2-eap")
+    hapd = hostapd.add_ap(apdev[0], params)
+    id = eap_connect(dev[0], hapd, "TTLS", "pap user",
+                     anonymous_identity="ttls", password="password",
+                     ca_cert="auth_serv/ca.pem", phase2="auth=PAP")
+    dev[0].request("LOGOFF")
+    dev[0].request("DISCONNECT")
+    dev[0].request("LOGON")
+    dev[0].wait_disconnected()
+    dev[0].request("PMKSA_FLUSH")
+    time.sleep(0.1)
+    dev[0].select_network(id)
+    dev[0].wait_connected()
