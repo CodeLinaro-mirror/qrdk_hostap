@@ -34,6 +34,9 @@
 #include <wolfssl/wolfcrypt/sha.h>
 #include <wolfssl/wolfcrypt/sha256.h>
 #include <wolfssl/wolfcrypt/sha512.h>
+#ifdef CONFIG_PQC
+#include <wolfssl/wolfcrypt/wc_mlkem.h>
+#endif /* CONFIG_PQC */
 
 #ifdef CONFIG_FIPS
 #ifndef HAVE_FIPS
@@ -3878,6 +3881,232 @@ fail:
 
 	return ret;
 }
+
+
+#ifdef CONFIG_PQC
+#ifdef WOLFSSL_HAVE_MLKEM
+
+struct crypto_ml_kem {
+	MlKemKey *key;
+	WC_RNG *rng;
+};
+
+
+static int crypto_ml_kem_alg_type(enum crypto_ml_kem_variant variant)
+{
+	switch (variant) {
+	case CRYPTO_ML_KEM_512:
+		return WC_ML_KEM_512;
+	case CRYPTO_ML_KEM_768:
+		return WC_ML_KEM_768;
+	case CRYPTO_ML_KEM_1024:
+		return WC_ML_KEM_1024;
+	default:
+		return -1;
+	}
+}
+
+
+struct crypto_ml_kem * crypto_ml_kem_init(enum crypto_ml_kem_variant variant)
+{
+	struct crypto_ml_kem *ml_kem;
+	int type;
+
+	type = crypto_ml_kem_alg_type(variant);
+	if (type < 0) {
+		wpa_printf(MSG_DEBUG, "wolfSSL: Unsupported ML-KEM variant: %d",
+			   variant);
+		return NULL;
+	}
+
+	ml_kem = os_zalloc(sizeof(*ml_kem));
+	if (!ml_kem)
+		return NULL;
+
+	ml_kem->key = wc_MlKemKey_New(type, NULL, INVALID_DEVID);
+	if (!ml_kem->key) {
+		LOG_WOLF_ERROR_FUNC_NULL(wc_MlKemKey_New);
+		crypto_ml_kem_deinit(ml_kem);
+		return NULL;
+	}
+
+	ml_kem->rng = wc_rng_init();
+	if (!ml_kem->rng) {
+		LOG_WOLF_ERROR_FUNC_NULL(wc_rng_init);
+		crypto_ml_kem_deinit(ml_kem);
+		return NULL;
+	}
+
+	return ml_kem;
+}
+
+
+void crypto_ml_kem_deinit(struct crypto_ml_kem *ml_kem)
+{
+	if (!ml_kem)
+		return;
+
+	wc_MlKemKey_Delete(ml_kem->key, NULL);
+	wc_rng_free(ml_kem->rng);
+	os_free(ml_kem);
+}
+
+
+int crypto_ml_kem_keygen(struct crypto_ml_kem *ml_kem)
+{
+	int err;
+
+	if (!ml_kem)
+		return -1;
+
+	err = wc_MlKemKey_MakeKey(ml_kem->key, ml_kem->rng);
+	if (err) {
+		LOG_WOLF_ERROR_FUNC(wc_MlKemKey_MakeKey, err);
+		return -1;
+	}
+
+	return 0;
+}
+
+
+struct wpabuf * crypto_ml_kem_get_pubkey(struct crypto_ml_kem *ml_kem)
+{
+	word32 len;
+	int err;
+	struct wpabuf *buf;
+
+	if (!ml_kem || !ml_kem->key)
+		return NULL;
+
+	err = wc_MlKemKey_PublicKeySize(ml_kem->key, &len);
+	if (err) {
+		LOG_WOLF_ERROR_FUNC(wc_MlKemKey_PublicKeySize, err);
+		return NULL;
+	}
+
+	buf = wpabuf_alloc(len);
+	if (!buf)
+		return NULL;
+
+	err = wc_MlKemKey_EncodePublicKey(ml_kem->key, wpabuf_put(buf, len),
+					  len);
+	if (err) {
+		LOG_WOLF_ERROR_FUNC(wc_MlKemKey_EncodePublicKey, err);
+		wpabuf_free(buf);
+		return NULL;
+	}
+
+	return buf;
+}
+
+
+int crypto_ml_kem_encapsulate(struct crypto_ml_kem *ml_kem,
+			      const u8 *peer_pub, size_t peer_pub_len,
+			      struct wpabuf **ciphertext,
+			      struct wpabuf **secret)
+{
+	int err;
+	word32 ct_len, ss_len;
+	struct wpabuf *ct, *ss;
+
+	if (!ml_kem || !ml_kem->key || !peer_pub || !peer_pub_len ||
+	    !ciphertext || !secret)
+		return -1;
+
+	err = wc_MlKemKey_DecodePublicKey(ml_kem->key, peer_pub, peer_pub_len);
+	if (err) {
+		LOG_WOLF_ERROR_FUNC(wc_MlKemKey_DecodePublicKey, err);
+		return -1;
+	}
+
+	err = wc_MlKemKey_CipherTextSize(ml_kem->key, &ct_len);
+	if (err) {
+		LOG_WOLF_ERROR_FUNC(wc_MlKemKey_CipherTextSize, err);
+		return -1;
+	}
+
+	err = wc_MlKemKey_SharedSecretSize(ml_kem->key, &ss_len);
+	if (err) {
+		LOG_WOLF_ERROR_FUNC(wc_MlKemKey_SharedSecretSize, err);
+		return -1;
+	}
+
+	ct = wpabuf_alloc(ct_len);
+	if (!ct)
+		return -1;
+
+	ss = wpabuf_alloc(ss_len);
+	if (!ss) {
+		wpabuf_free(ct);
+		return -1;
+	}
+
+	err = wc_MlKemKey_Encapsulate(ml_kem->key, wpabuf_put(ct, ct_len),
+				      wpabuf_put(ss, ss_len), ml_kem->rng);
+	if (err) {
+		LOG_WOLF_ERROR_FUNC(wc_MlKemKey_Encapsulate, err);
+		wpabuf_free(ct);
+		wpabuf_free(ss);
+		return -1;
+	}
+
+	*ciphertext = ct;
+	*secret = ss;
+
+	return 0;
+}
+
+
+int crypto_ml_kem_decapsulate(struct crypto_ml_kem *ml_kem,
+			      const u8 *ciphertext, size_t ciphertext_len,
+			      struct wpabuf **secret)
+{
+	int err;
+	word32 ct_len, ss_len;
+	struct wpabuf *ss;
+
+	if (!ml_kem || !ml_kem->key || !ciphertext || !secret)
+		return -1;
+
+	err = wc_MlKemKey_CipherTextSize(ml_kem->key, &ct_len);
+	if (err) {
+		LOG_WOLF_ERROR_FUNC(wc_MlKemKey_CipherTextSize, err);
+		return -1;
+	}
+
+	if (ciphertext_len != ct_len) {
+		wpa_printf(MSG_INFO,
+			   "wolfSSL: Unexpected ciphertext length (%zu != %u) for ML-KEM decapsulate",
+			   ciphertext_len, ct_len);
+	}
+
+	err = wc_MlKemKey_SharedSecretSize(ml_kem->key, &ss_len);
+	if (err) {
+		LOG_WOLF_ERROR_FUNC(wc_MlKemKey_SharedSecretSize, err);
+		return -1;
+	}
+
+	ss = wpabuf_alloc(ss_len);
+	if (!ss)
+		return -1;
+
+	err = wc_MlKemKey_Decapsulate(ml_kem->key, wpabuf_put(ss, ss_len),
+				      ciphertext, ciphertext_len);
+	if (err) {
+		LOG_WOLF_ERROR_FUNC(wc_MlKemKey_Decapsulate, err);
+		wpabuf_free(ss);
+		return -1;
+	}
+
+	*secret = ss;
+
+	return 0;
+}
+
+#else /* WOLFSSL_HAVE_MLKEM */
+#error wolfSSL build does not include ML-KEM
+#endif /* WOLFSSL_HAVE_MLKEM */
+#endif /* CONFIG_PQC */
 
 
 void crypto_unload(void)
