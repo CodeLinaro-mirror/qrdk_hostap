@@ -5974,6 +5974,29 @@ static int hostapd_global_ctrl_iface_ifname(struct hapd_interfaces *interfaces,
 }
 
 
+static int hostapd_global_ctrl_iface_get(struct hapd_interfaces *interfaces,
+					 char *cmd, char *buf, size_t buflen)
+{
+	int res;
+
+	wpa_printf(MSG_DEBUG, "CTRL_IFACE GET '%s'", cmd);
+
+	if (os_strcmp(cmd, "version") == 0) {
+		res = os_snprintf(buf, buflen, "%s", VERSION_STR);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcmp(cmd, "tls_library") == 0) {
+		res = tls_get_library_version(buf, buflen);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	}
+
+	return -1;
+}
+
+
 static void hostapd_global_ctrl_iface_receive(int sock, void *eloop_ctx,
 					      void *sock_ctx)
 {
@@ -6111,6 +6134,10 @@ static void hostapd_global_ctrl_iface_receive(int sock, void *eloop_ctx,
 			interfaces, buf + 10, reply, reply_size);
 	} else if (os_strcmp(buf, "TERMINATE") == 0) {
 		eloop_terminate();
+	} else if (os_strncmp(buf, "GET ", 4) == 0) {
+		reply_len = hostapd_global_ctrl_iface_get(interfaces,
+							  buf + 4, reply,
+							  reply_size);
 	} else {
 		wpa_printf(MSG_DEBUG, "Unrecognized global ctrl_iface command "
 			   "ignored");
