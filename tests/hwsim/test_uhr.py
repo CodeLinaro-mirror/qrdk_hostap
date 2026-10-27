@@ -96,26 +96,36 @@ def test_uhr_simple(dev, apdev):
 
 def test_uhr_required_not_supported(dev, apdev):
     """no connection if UHR is required but not supported by client"""
-    params = {
-        "ssid": "uhr",
-        "ieee80211ax": "1",
-        "ieee80211be": "1",
-        "ieee80211bn": "1",
-        "require_uhr": "1",
-    }
-    try:
-        hapd = hostapd.add_ap(apdev[0], params)
-    except Exception as e:
-        if isinstance(e, Exception) and \
-           str(e) == "Failed to set hostapd parameter ieee80211bn":
-            raise HwsimSkip("UHR not supported")
-        raise
-    if hapd.get_status_field("ieee80211bn") != "1":
-        raise Exception("AP STATUS did not indicate ieee80211bn=1")
-    dev[0].connect("uhr", key_mgmt="NONE", scan_freq="2412", disable_uhr="1",
-                   wait_connect=False)
-    ev = dev[0].wait_event(["CTRL-EVENT-CONNECTED"], timeout=10)
-    assert ev is None, "connected despite disable_uhr/require_uhr"
+    with HWSimRadio(use_mlo=True) as (hapd_radio, hapd_iface):
+        passphrase = 'qwertyuiop'
+        params = eht_mld_ap_wpa2_params("uhr", key_mgmt="SAE",
+                                        passphrase=passphrase,
+                                        pwe='2', mfp='2')
+        params['ieee80211bn'] = '1'
+        params['require_uhr'] = '1'
+        try:
+            hapd = eht_mld_enable_ap(hapd_iface, 0, params)
+        except Exception as e:
+            if isinstance(e, Exception) and \
+               str(e) == "Failed to set hostapd parameter ieee80211bn":
+                raise HwsimSkip("UHR not supported")
+            raise
+        if hapd.get_status_field("ieee80211bn") != "1":
+            raise Exception("AP STATUS did not indicate ieee80211bn=1")
+        ev = None
+        try:
+            dev[0].set("sae_groups", "")
+            dev[0].set("sae_pwe", "1")
+            dev[0].connect("uhr", key_mgmt="SAE", sae_password=passphrase,
+                           ieee80211w="2", scan_freq="2412",
+                           disable_uhr="1", wait_connect=False)
+            ev = dev[0].wait_event(["CTRL-EVENT-CONNECTED"], timeout=10)
+        finally:
+            dev[0].set("sae_groups", "")
+            dev[0].set("sae_pwe", "0")
+
+        if ev:
+            raise Exception("connected despite disable_uhr/require_uhr")
 
 def uhr_mld_ap_wpa2_params(ssid, passphrase=None, key_mgmt="WPA-PSK-SHA256",
                            mfp="2", pwe=None, beacon_prot="1", bridge=False):
