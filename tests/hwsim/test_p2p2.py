@@ -15,6 +15,7 @@ logger = logging.getLogger()
 import os
 import hwsim_utils
 
+from utils import *
 from wpasupplicant import WpaSupplicant
 from test_nan_usd import check_nan_usd_capab, split_nan_event
 from test_pasn import check_pasn_capab
@@ -790,6 +791,9 @@ def test_p2p_auto_go_pcc_with_p2p2_cli(dev, apdev):
 
 def run_p2p_r2_pcc_go_and_pcc_client_join(go, cli):
     """Start a PCC Auto GO and join with a PCC client using SAE"""
+    check_sae_capab(go)
+    check_sae_capab(cli)
+    cli.set("sae_groups", "")
     set_p2p2_configs(go)
     set_p2p2_configs(cli)
 
