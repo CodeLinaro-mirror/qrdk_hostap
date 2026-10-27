@@ -22,6 +22,11 @@ def check_mldsa_support(dev):
     if (int(match.group(1)), int(match.group(2))) < (3, 5):
         raise HwsimSkip("ML-DSA not supported with this TLS library: " + tls)
 
+def check_mldsa(dev, apdev):
+    hapd_global = hostapd.HostapdGlobal(apdev[0])
+    check_mldsa_support(hapd_global)
+    check_mldsa_support(dev[0])
+
 def mldsa_ap_params():
     """Return hostapd parameters for an AP using an ML-DSA server certificate"""
     return {"ssid": "test-wpa2-eap",
@@ -49,37 +54,33 @@ def mldsa_connect(dev, hapd, **kwargs):
 
 def test_eap_pqc_mldsa(dev, apdev):
     """EAP-TLS with ML-DSA certificates"""
+    check_mldsa(dev, apdev)
     params = mldsa_ap_params()
     hapd = hostapd.add_ap(apdev[0], params)
-    check_mldsa_support(hapd)
-    check_mldsa_support(dev[0])
     mldsa_connect(dev[0], hapd)
 
 def test_eap_pqc_mldsa_hybrid_kex(dev, apdev):
     """EAP-TLS with ML-DSA certificates and hybrid ML-KEM key exchange"""
+    check_mldsa(dev, apdev)
     params = mldsa_ap_params()
     params["openssl_ecdh_curves"] = "X25519MLKEM768"
     hapd = hostapd.add_ap(apdev[0], params)
-    check_mldsa_support(hapd)
-    check_mldsa_support(dev[0])
     mldsa_connect(dev[0], hapd, openssl_ecdh_curves="X25519MLKEM768")
 
 def test_eap_pqc_mldsa_sigalgs(dev, apdev):
     """EAP-TLS with ML-DSA certificates and explicit signature algorithms"""
+    check_mldsa(dev, apdev)
     params = mldsa_ap_params()
     params["openssl_sigalgs"] = "mldsa87"
     hapd = hostapd.add_ap(apdev[0], params)
-    check_mldsa_support(hapd)
-    check_mldsa_support(dev[0])
     mldsa_connect(dev[0], hapd, openssl_sigalgs="mldsa87")
 
 def test_eap_pqc_mldsa_sigalgs_mismatch(dev, apdev):
     """EAP-TLS with incompatible signature algorithm configuration"""
+    check_mldsa(dev, apdev)
     params = mldsa_ap_params()
     params["openssl_sigalgs"] = "mldsa87"
     hapd = hostapd.add_ap(apdev[0], params)
-    check_mldsa_support(hapd)
-    check_mldsa_support(dev[0])
 
     dev[0].connect("test-wpa2-eap", key_mgmt="WPA-EAP", eap="TLS",
                    identity="tls user",
@@ -99,9 +100,8 @@ def test_eap_pqc_mldsa_sigalgs_mismatch(dev, apdev):
 
 def test_eap_pqc_mldsa_fragmentation(dev, apdev):
     """EAP-TLS with ML-DSA certificates and small EAP fragments"""
+    check_mldsa(dev, apdev)
     params = mldsa_ap_params()
     params["fragment_size"] = "500"
     hapd = hostapd.add_ap(apdev[0], params)
-    check_mldsa_support(hapd)
-    check_mldsa_support(dev[0])
     mldsa_connect(dev[0], hapd, fragment_size="500")
