@@ -529,6 +529,7 @@ static void wpas_dpp_tx_status(struct wpa_supplicant *wpa_s,
 		auth->connect_on_tx_status = 0;
 		wpa_printf(MSG_DEBUG,
 			   "DPP: Try to connect after completed configuration result");
+		offchannel_send_action_done(wpa_s);
 		wpas_dpp_try_to_connect(wpa_s);
 		if (auth->conn_status_requested) {
 			wpa_printf(MSG_DEBUG,
