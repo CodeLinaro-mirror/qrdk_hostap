@@ -9,6 +9,7 @@ from utils import *
 from hwsim import HWSimRadio
 from wpasupplicant import WpaSupplicant
 from test_eht import eht_mld_enable_ap, eht_verify_status, eht_verify_wifi_version, traffic_test
+from test_security_profiles import enable_sta_security_profiles, disable_sta_security_profiles, sta_cleanup
 
 def test_rsn_override(dev, apdev):
     """RSNE=WPA2-Personal/PMF-optional override=WPA3-Personal/PMF-required (with MLO parameters)"""
@@ -465,3 +466,44 @@ def test_rsn_override_kdk_secure_ltf(dev, apdev):
     wpas.set("sae_groups", "")
     wpas.connect(ssid, sae_password="12345678", key_mgmt="SAE",
                  ieee80211w="2", scan_freq="2412")
+
+def test_rsn_override_and_secprof(dev, apdev):
+    """RSN overriding and security profile"""
+    check_sae_capab(dev[0])
+
+    ssid = "test-rsn-override"
+    params = hostapd.wpa2_params(ssid=ssid,
+                                 passphrase="12345678",
+                                 ieee80211w='1')
+    params['rsn_override_key_mgmt'] = 'SAE SAE-EXT-KEY'
+    params['rsn_override_pairwise'] = 'CCMP GCMP-256'
+    params['rsn_override_mfp'] = '2'
+    params['beacon_prot'] = '1'
+    params['sae_groups'] = '19 20'
+    params['sae_require_mfp'] = '1'
+    params['sae_pwe'] = '2'
+    params['security_profiles'] = '9'
+    hapd = hostapd.add_ap(apdev[0], params)
+    bssid = hapd.own_addr()
+
+    try:
+        enable_sta_security_profiles(dev[0], 9)
+        dev[0].set("rsn_overriding", "1")
+        dev[0].set("sae_pwe", "2")
+        dev[0].set("sae_groups", "")
+        dev[0].connect(ssid, sae_password="12345678",
+                       key_mgmt="SAE SAE-EXT-KEY",
+                       ieee80211w="2", beacon_prot="1",
+                       pairwise="CCMP GCMP-256", group="CCMP GCMP-256",
+                       group_mgmt="AES-128-CMAC BIP-GMAC-256",
+                       pmksa_privacy="1",
+                       scan_freq="2412")
+        sp = dev[0].get_status_field("security_profile")
+        if sp is None or int(sp) != 9:
+            raise Exception("wpa_supplicant did not report security profile use")
+        hapd.wait_sta()
+        sta = hapd.get_sta(dev[0].own_addr())
+        if "security_profile" not in sta or int(sta["security_profile"]) != 9:
+            raise Exception("hostapd did not report securit profile use")
+    finally:
+        sta_cleanup(dev[0])
