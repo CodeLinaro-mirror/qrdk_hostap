@@ -531,7 +531,7 @@ static struct wpabuf * wpas_pasn_get_wrapped_data(struct pasn_data *pasn)
 #ifdef CONFIG_ENC_ASSOC
 	case WPA_KEY_MGMT_EPPKE:
 		/* EPPKE without base AKM: no wrapped data per
-		 * IEEE P802.11bi/D4.0, 12.16.9.1 */
+		 * IEEE Std 802.11bi-2026, 12.16.9.1 */
 		return NULL;
 #endif /* CONFIG_ENC_ASSOC */
 	case WPA_KEY_MGMT_SAE:

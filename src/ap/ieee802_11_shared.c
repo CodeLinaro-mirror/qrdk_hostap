@@ -1165,7 +1165,7 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 	    hapd->conf->spp_amsdu)
 		capab |= BIT(WLAN_RSNX_CAPAB_SPP_A_MSDU);
 #ifdef CONFIG_ENC_ASSOC
-	/* Per IEEE 802.11bi/D4.0, 12.16.7 (PMKSA caching privacy)
+	/* Per IEEE Std 802.11bi-2026, 12.16.7 (PMKSA caching privacy)
 	 * a STA that sets the PMKSA Caching Privacy Support
 	 * field in the RSNXE to 1 shall set the (Re)Association
 	 * Frame Encryption Support field in the RSNXE to 1.

@@ -1681,7 +1681,7 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 		    wpa_s->sel_security_profile->key_mgmt ==
 		    WPA_KEY_MGMT_EPPKE)) {
 		/* EPPKE without base AKM: verify AP supports unauthenticated
-		 * EPPKE per IEEE P802.11bi/D4.0, 12.16.9.1 */
+		 * EPPKE per IEEE Std 802.11bi-2026, 12.16.9.1 */
 		if (!ieee802_11_rsnx_capab(ap_rsnxe,
 					   WLAN_RSNX_CAPAB_UNAUTH_EPPKE)) {
 			wpa_printf(MSG_DEBUG,

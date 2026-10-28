@@ -398,7 +398,7 @@ static struct wpabuf * pasn_get_wrapped_data(struct pasn_data *pasn)
 #ifdef CONFIG_ENC_ASSOC
 	case WPA_KEY_MGMT_EPPKE:
 		/* EPPKE without base AKM: no wrapped data per
-		 * IEEE P802.11bi/D4.0, 12.16.9.1 */
+		 * IEEE Std 802.11bi-2026, 12.16.9.1 */
 		return NULL;
 #endif /* CONFIG_ENC_ASSOC */
 	case WPA_KEY_MGMT_SAE:
@@ -813,11 +813,11 @@ pasn_resp_find_pmksa(struct pasn_data *pasn, const struct ieee80211_mgmt *mgmt,
 		     const u8 *pmkid)
 {
 #ifdef CONFIG_PMKSA_PRIVACY
-	/* Per IEEE 802.11bi/D4.0, 12.16.7 (PMKSA caching privacy), a STA can
-	 * randomize its MAC address or MLD MAC address to avoid tracking based
-	 * on the MAC address. With PMKSA caching privacy, PMKSA entries can
-	 * still be found using the latest derived PMKID. In this cases, the MAC
-	 * address matching is not used. */
+	/* Per IEEE Std 802.11bi-2026, 12.16.7 (PMKSA caching privacy), a STA
+	 * can randomize its MAC address or MLD MAC address to avoid tracking
+	 * based on the MAC address. With PMKSA caching privacy, PMKSA entries
+	 * can still be found using the latest derived PMKID. In this cases,
+	 * the MAC address matching is not used. */
 	if (pasn->pmksa_cache_search &&
 	    mgmt->u.auth.auth_alg == WLAN_AUTH_EPPKE &&
 	    pasn->pmksa_caching_privacy &&
@@ -900,7 +900,7 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 	}
 
 #ifdef CONFIG_ENC_ASSOC
-	/* IEEE 802.11bi/D4.0, 12.16.9.1 (Enhanced privacy protection key
+	/* IEEE Std 802.11bi-2026, 12.16.9 (Enhanced privacy protection key
 	 * exchange) allows the use of SAE-EXT/FT-SAE-EXT as the base AKMP.
 	 * When not using mutual authentication, the EPPKE AKMP itself is
 	 * used as the selected AKMP in the RSNE (no base AKM case).

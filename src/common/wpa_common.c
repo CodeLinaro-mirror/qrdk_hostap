@@ -1765,7 +1765,7 @@ int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 
 	/*
 	 * Use "EPPKE PTK Derivation" instead of “PASN PTK Derivation” for
-	 * EPPKE Authentication per IEEE P802.11bi/D4.0, 12.16.9.3.4 (PTKSA
+	 * EPPKE Authentication per IEEE Std 802.11bi-2026, 12.16.9.3.4 (PTKSA
 	 * derivation and MIC computation with EPPKE authentication). For EPPKE
 	 * MLO, the non-AP MLD MAC address is used instead of the SPA and the
 	 * AP MLD MAC address instead of the BSSID.
@@ -3285,7 +3285,7 @@ int rsn_pmkid_suite_b_192(const u8 *kck, size_t kck_len, const u8 *aa,
  * @pmkid: Buffer for returning PMKID
  * Returns: 0 on success, -1 on failure
  *
- * IEEE P802.11bi/D4.0, 12.16.7.2 (PMKID privacy)
+ * IEEE Std 802.11bi-2026, 12.16.7.2 (PMKID privacy)
  * PMKID = Truncate-128(Hash("PMK Name" || PMKIDANonce || PMKIDSNonce))
  */
 int rsn_pmkid_privacy(const u8 *pmkid_anonce, const u8 *pmkid_snonce,
@@ -4685,7 +4685,7 @@ int wpa_pasn_add_rsne(struct wpabuf *buf, const u8 *pmkid, int akmp, int cipher,
 #ifdef CONFIG_ENC_ASSOC
 	case WPA_KEY_MGMT_EPPKE:
 		/* EPPKE without base AKM: EPPKE AKMP is used as the selected
-		 * AKMP per IEEE P802.11bi/D4.0, 12.16.9.1. */
+		 * AKMP per IEEE Std 802.11bi-2026, 12.16.9.1. */
 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_EPPKE);
 		break;
 #endif /* CONFIG_ENC_ASSOC */
@@ -4942,7 +4942,7 @@ int wpa_pasn_validate_rsne(const struct wpa_ie_data *data, bool is_eppke)
 	case WPA_KEY_MGMT_EPPKE:
 		/* EPPKE AKMP is used when EPPKE is performed without a base
 		 * AKM (no mutual authentication). This is only valid for EPPKE
-		 * authentication per IEEE P802.11bi/D4.0, 12.16.9.1. */
+		 * authentication per IEEE Std 802.11bi-2026, 12.16.9.1. */
 		if (!is_eppke) {
 			wpa_printf(MSG_INFO,
 				   "PASN: EPPKE AKM not allowed for PASN");

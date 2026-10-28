@@ -3022,8 +3022,8 @@ prepare_802_1x_auth_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	 * equal to 3 contain Authentication fields only.
 	 */
 	if (auth_transaction == 2) {
-		/* Per IEEE 802.11bi/D4.0, 12.16.8.3 (IEEE 802.1X), a responder
-		 * that sets
+		/* Per IEEE Std 802.11bi-2026, 12.16.8.3 (IEEE 802.1X), a
+		 * responder that sets
 		 * dot11EPPReAssociationFrameEncryptionSupportActivated
 		 * to false or does not receive the RSNXE in the first
 		 * Authentication frame with the (Re)Association Frame
@@ -3046,7 +3046,7 @@ prepare_802_1x_auth_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			os_memcpy(sta->eap_auth_data.anonce, a_nonce,
 				  WPA_NONCE_LEN);
 
-			/* Per IEEE 802.11bi/D4.0, 12.16.8.3 (IEEE 802.1X),
+			/* Per IEEE Std 802.11bi-2026, 12.16.8.3 (IEEE 802.1X),
 			 * responder shall include an RSNE with the AKM and
 			 * pairwise cipher suite as indicated in the first
 			 * Authentication frame.
@@ -3082,7 +3082,7 @@ prepare_802_1x_auth_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			wpabuf_put_u8(data, WLAN_EID_EXT_NONCE);
 			wpabuf_put_data(data, a_nonce, WPA_NONCE_LEN);
 		} else {
-			/* Per IEEE 802.11bi/D4.0, 12.16.5 (IEEE 802.1X
+			/* Per IEEE Std 802.11bi-2026, 12.16.5 (IEEE 802.1X
 			 * authentication utilizing Authentication frames), the
 			 * Responser shall construct the second Authentication
 			 * frame with an AKM Suite Selector element indicating
@@ -3314,7 +3314,7 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 	bool pmkid_included = false;
 #endif /* CONFIG_PQC */
 
-	/* Per IEEE P802.11bi/D4.0, 12.16.8.3 (IEEE 802.1X), an originator that
+	/* Per IEEE Std 802.11bi, 12.16.8.3 (IEEE 802.1X), an originator that
 	 * sets dot11EPPReAssociationFrameEncryptionSupportActivated to false or
 	 * does not receive the RSNXE from the responder with the
 	 * (Re)Association Frame Encryption Support field set to 1 shall not
@@ -3672,9 +3672,9 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 			aa = hapd->mld->mld_addr;
 #endif /* CONFIG_IEEE80211BE */
 
-		/* Per IEEE 802.11bi/D4.0, 12.16.5 (IEEE 802.1X authentication
-		 * utilizing Authentication frames), if the IEEE 802.1X
-		 * authentication is successful, the Status Code field
+		/* Per IEEE Std 802.11bi-2026, 12.16.5 (IEEE 802.1X
+		 * authentication utilizing Authentication frames), if the IEEE
+		 * 802.1X authentication is successful, the Status Code field
 		 * is set to 802_1_X_AUTH_SUCCESS. */
 		status = WLAN_STATUS_802_1_X_AUTH_SUCCESS;
 		/* TODO: If the IEEE 802.1X authentication fails,
@@ -5142,7 +5142,7 @@ static void hapd_initialize_pasn(struct hostapd_data *hapd,
 	pasn->pmksa_caching_privacy = hapd->conf->pmksa_caching_privacy;
 #endif /* CONFIG_PMKSA_PRIVACY */
 #if defined(CONFIG_IEEE80211BE) && defined(CONFIG_ENC_ASSOC)
-	/* Per IEEE802.11bi/D4.0, 12.16.9 (Enhanced privacy
+	/* Per IEEE Std 802.11bi-2026, 12.16.9 (Enhanced privacy
 	 * protection key exchange), if (Re)Association frame
 	 * Encryption is activated, KEK in PASN shall be true.
 	 */
@@ -6959,7 +6959,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_P2P */
 
 #ifdef CONFIG_IEEE8021X_AUTH
-	/* Per IEEE 802.11bi/D4.0, 12.16.6 ((Re)Association Request/Response
+	/* Per IEEE Std 802.11bi-2026, 12.16.6 ((Re)Association Request/Response
 	 * frame encryption), if IEEE 802.1X is used and FT protocol is not
 	 * used, the EPP non-AP STA shall include a MIC element in the
 	 * (Re)Association Request frame.
@@ -7207,10 +7207,10 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			sta->flags &= ~WLAN_STA_SPP_AMSDU;
 
 #ifdef CONFIG_PMKSA_PRIVACY
-	/* Per IEEE 802.11bi/D4.0, 12.16.7 (PMKSA caching privacy), when both
-	 * the AP and non-AP STA support PMKSA caching privacy, the non-AP STA
-	 * shall include a Nonce element in the (Re)Association Request frame.
-	 * Skip Nonce element processing for partner AP MLD links. */
+	/* Per IEEE Std 802.11bi-2026, 12.16.7 (PMKSA caching privacy), when
+	 * both the AP and non-AP STA support PMKSA caching privacy, the non-AP
+	 * STA shall include a Nonce element in the (Re)Association Request
+	 * frame. Skip Nonce element processing for partner AP MLD links. */
 #ifdef CONFIG_IEEE80211BE
 	if (ap_sta_is_mld(hapd, sta) &&
 	    hapd->mld_link_id != sta->mld_assoc_link_id)
