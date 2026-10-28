@@ -2810,7 +2810,7 @@ enum qca_wlan_vendor_acs_hw_mode {
  *
  * @QCA_WLAN_VENDOR_FEATURE_SUPPORT_PMKSA_CACHING_PRIVACY: Flag indicates that
  *	the driver supports PMKSA caching privacy as defined in
- *	IEEE P802.11bi/D4.0, 12.16.7. Userspace should enable PMKSA caching
+ *	IEEE Std 802.11bi-2026, 12.16.7. Userspace should enable PMKSA caching
  *	privacy only when both %NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION and
  *	this feature flag are advertised by the driver.
  *
@@ -21078,7 +21078,7 @@ enum qca_wlan_vendor_attr_audio_transport_switch {
  * @QCA_CONNECT_EXT_FEATURE_EXT_AUTH_8021X: Flag attribute. This indicates
  * supplicant support for external authentication with IEEE 802.1X
  * Authentication algorithm (EAP over Authentication frames) as specified
- * in IEEE P802.11bi/D4.0, 12.16.5. The driver can offload authentication to
+ * in IEEE Std 802.11bi-2026, 12.16.5. The driver can offload authentication to
  * supplicant via QCA_NL80211_VENDOR_SUBCMD_EXTERNAL_AUTH only if this flag is
  * enabled.
  *
@@ -24743,7 +24743,7 @@ enum qca_wlan_vendor_external_auth_action {
  *	Confirmation Key (KCK). This attribute is used to pass the KCK from the
  *	supplicant to the driver. With the KCK provided, the driver can
  *	calculate the MIC and append it to the (Re)Association Request frame as
- *	mandated by IEEE P802.11bi/D4.0, 12.16.6.2/12.16.6.3.
+ *	mandated by IEEE Std 802.11bi-2026, 12.16.6.2/12.16.6.3.
  *
  * @QCA_WLAN_VENDOR_ATTR_EXTERNAL_AUTH_SEC_PROFILE: Optional u8 attribute for
  *	the authentication request event interface. This attribute specifies the
