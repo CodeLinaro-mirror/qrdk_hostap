@@ -45,14 +45,15 @@ int os_get_reltime(struct os_reltime *t);
 
 /* Helpers for handling struct os_time */
 
-static inline int os_time_before(struct os_time *a, struct os_time *b)
+static inline int os_time_before(const struct os_time *a,
+				 const struct os_time *b)
 {
 	return (a->sec < b->sec) ||
 	       (a->sec == b->sec && a->usec < b->usec);
 }
 
 
-static inline void os_time_sub(struct os_time *a, struct os_time *b,
+static inline void os_time_sub(const struct os_time *a, const struct os_time *b,
 			       struct os_time *res)
 {
 	res->sec = a->sec - b->sec;
@@ -66,15 +67,16 @@ static inline void os_time_sub(struct os_time *a, struct os_time *b,
 
 /* Helpers for handling struct os_reltime */
 
-static inline int os_reltime_before(struct os_reltime *a,
-				    struct os_reltime *b)
+static inline int os_reltime_before(const struct os_reltime *a,
+				    const struct os_reltime *b)
 {
 	return (a->sec < b->sec) ||
 	       (a->sec == b->sec && a->usec < b->usec);
 }
 
 
-static inline void os_reltime_sub(struct os_reltime *a, struct os_reltime *b,
+static inline void os_reltime_sub(const struct os_reltime *a,
+				  const struct os_reltime *b,
 				  struct os_reltime *res)
 {
 	res->sec = a->sec - b->sec;
@@ -86,7 +88,7 @@ static inline void os_reltime_sub(struct os_reltime *a, struct os_reltime *b,
 }
 
 
-static inline void os_reltime_age(struct os_reltime *start,
+static inline void os_reltime_age(const struct os_reltime *start,
 				  struct os_reltime *age)
 {
 	struct os_reltime now;
@@ -96,8 +98,8 @@ static inline void os_reltime_age(struct os_reltime *start,
 }
 
 
-static inline int os_reltime_expired(struct os_reltime *now,
-				     struct os_reltime *ts,
+static inline int os_reltime_expired(const struct os_reltime *now,
+				     const struct os_reltime *ts,
 				     os_time_t timeout_secs)
 {
 	struct os_reltime age;
@@ -122,13 +124,13 @@ static inline void os_reltime_add_ms(struct os_reltime *ts, int ms)
 }
 
 
-static inline int os_reltime_in_ms(struct os_reltime *ts)
+static inline int os_reltime_in_ms(const struct os_reltime *ts)
 {
 	return ts->sec * 1000 + ts->usec / 1000;
 }
 
 
-static inline int os_reltime_initialized(struct os_reltime *t)
+static inline int os_reltime_initialized(const struct os_reltime *t)
 {
 	return t->sec != 0 || t->usec != 0;
 }
